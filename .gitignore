@@ -1,0 +1,58 @@
+# =========================
+# Unity - keep only 3 folders
+# =========================
+
+# --- 必須3フォルダ以外は無視 ---
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Mm]emoryCaptures/
+/[Uu]serSettings/
+/[Bb]uildData/
+
+# --- キャッシュ・一時ファイル ---
+*.csproj
+*.sln
+*.unityproj
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# --- OS依存 ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Unity 自動生成 ---
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# --- Addressables / Shader ---
+/Library/ShaderCache/
+/Library/Artifacts/
+/Library/AddressableAssetsData/
+
+# --- Rider / VS / VSCode ---
+.vscode/
+.idea/
+
+# --- ビルド成果物 ---
+*.apk
+*.aab
+*.exe
+*.app
+*.unitypackage
+
+# --- ログ ---
+*.log
