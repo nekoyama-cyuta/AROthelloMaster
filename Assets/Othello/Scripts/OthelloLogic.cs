@@ -1,6 +1,10 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using NUnit.Framework.Constraints;
+using Mono.Cecil.Cil;
+using Unity.VisualScripting;
+using UnityEngine.Analytics;
 
 public class OthelloLogic : MonoBehaviour
 {
@@ -36,20 +40,39 @@ public class OthelloLogic : MonoBehaviour
 
         // 石を置けるかを計算する処理をここに実装して！！！！！------------------
 
-        bool isPlayable = false; // 石を置けるかどうかの判定結果の例
-
-
-        // 例　右側に相手の石があるとき、自分の石を置くことができると判定する場合（暴論）
-        if(x < 7 && StoneData[x+1][z] == team*-1) // 右側が相手の石であれば、
+        if(StoneData[x][z] != 0) return false;
+        int opponent = team*-1;
+        Vector2Int[] directions = new Vector2Int[]
         {
-            isPlayable = true; // 石を置けると判定する
+            new Vector2Int(0,1),
+            new Vector2Int(0,-1),
+            new Vector2Int(-1,0),
+            new Vector2Int(1,0),
+            new Vector2Int(-1,1),
+            new Vector2Int(1,1),
+            new Vector2Int(-1,-1),
+            new Vector2Int(1,-1)
+        };
+        foreach(var dir in directions)
+        {
+            int checkX = x+dir.x;
+            int checkZ = z+dir.y;
+
+            if(checkX < 0 || checkX >= 8 || checkZ < 0 || checkZ >= 8) continue;
+            if(StoneData[checkX][checkZ] != opponent) continue;
+            while(true)
+            {
+                checkX += dir.x;
+                checkZ += dir.y;
+                if(checkX < 0 || checkX >= 8 || checkZ < 0 || checkZ >= 8) break;
+                if(StoneData[checkX][checkZ] == 0) break;
+                if(StoneData[checkX][checkZ] == team)
+                {
+                    return true;
+                }
+            }
         }
-
+        return false;
         // -------------------------------------------------------------------
-
-
-
-
-        return isPlayable;
     }
 }

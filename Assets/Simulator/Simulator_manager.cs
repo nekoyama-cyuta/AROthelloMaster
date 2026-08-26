@@ -26,7 +26,7 @@ public class Simulator_manager : MonoBehaviour
         InitializeStones();
         Generate();
 
-        UpdatePlayableStones(1); // 白石のターンのときに置けるマスを表示する
+        UpdatePlayableStones(-1); // 白石のターンのときに置けるマスを表示する
     }
 
     void InitializeStones()
