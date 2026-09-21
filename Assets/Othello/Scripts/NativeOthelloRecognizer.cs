@@ -70,6 +70,13 @@ public class NativeOthelloRecognizer : IDisposable
         int whiteThreshold,
         int transparentBg
     );
+
+    [DllImport(PLUGIN_NAME, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int OthelloCv_GetLastCellStats(
+        [Out] float[] outValues,
+        [Out] float[] outSaturations,
+        [Out] float[] outHues
+    );
 #endif
 
     // 再利用可能な固定長バッファ (GC Alloc ゼロ)
@@ -562,6 +569,315 @@ public class NativeOthelloRecognizer : IDisposable
     {
         return TryRecognizeWebCam(webCam, outBoard, outCorners, null);
     }
+
+    #region 統計学的動的閾値キャリブレーション (多クラス大津法 / Multi-Otsu)
+
+    [Serializable]
+    public struct CalibrationResult
+    {
+        public int BlackThreshold;
+        public int WhiteThreshold;
+        public float Separability;       // η: 分離度指標 (0..1)
+        public float FeltMean;          // フェルト平均輝度
+        public float FeltStdDev;        // フェルト標準偏差
+        public float Class0Mean;        // 黒石クラスタ平均
+        public float Class1Mean;        // フェルトクラスタ平均
+        public float Class2Mean;        // 白石クラスタ平均
+        public bool IsDegenerate;       // 空盤面または単一峰検定フラグ (3.5σ安全保護適用)
+        public string Summary;
+
+        public override string ToString()
+        {
+            return $"B<{BlackThreshold} | W>{WhiteThreshold} | η:{Separability:F2} | Felt:{FeltMean:F1}±{FeltStdDev:F1}" +
+                   (IsDegenerate ? " [Degenerate 3.5σ]" : " [Multi-Otsu]");
+        }
+    }
+
+    public CalibrationResult LastCalibration { get; private set; }
+
+    private readonly float[] _cachedCellValues = new float[64];
+    private readonly float[] _cachedCellSaturations = new float[64];
+    private readonly float[] _cachedCellHues = new float[64];
+
+    /// <summary>
+    /// 直近の認識フレームから 64 マスの HSV 統計量を取得
+    /// </summary>
+    public bool TryGetLastCellStats(float[] outValues, float[] outSaturations = null, float[] outHues = null)
+    {
+        if (outValues == null || outValues.Length < 64) return false;
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        int res = OthelloCv_GetLastCellStats(outValues, outSaturations, outHues);
+        return res == 1;
+#else
+        // Editor シミュレーション: 初期配置 (フェルト ~110, 白石 ~220, 黒石 ~25)
+        for (int i = 0; i < 64; i++)
+        {
+            outValues[i] = 110f + UnityEngine.Random.Range(-8f, 8f);
+            if (outSaturations != null && outSaturations.Length >= 64)
+            {
+                outSaturations[i] = 120f + UnityEngine.Random.Range(-10f, 10f); // 緑の彩度
+            }
+            if (outHues != null && outHues.Length >= 64)
+            {
+                outHues[i] = 60f + UnityEngine.Random.Range(-5f, 5f); // 緑相
+            }
+        }
+        // 白石 (3,3), (4,4)
+        outValues[3 * 8 + 3] = 225f;
+        outValues[4 * 8 + 4] = 220f;
+        // 黒石 (3,4), (4,3)
+        outValues[3 * 8 + 4] = 25f;
+        outValues[4 * 8 + 3] = 28f;
+
+        if (outSaturations != null)
+        {
+            outSaturations[3 * 8 + 3] = 15f; // 白石は低彩度
+            outSaturations[4 * 8 + 4] = 18f;
+            outSaturations[3 * 8 + 4] = 20f; // 黒石も低彩度
+            outSaturations[4 * 8 + 3] = 22f;
+        }
+        return true;
+#endif
+    }
+
+    /// <summary>
+    /// 直近の認識データまたは指定データから統計的動的閾値 (Multi-Otsu) を計算し、自身の閾値を即時更新
+    /// </summary>
+    public CalibrationResult CalibrateDynamicThresholds(float[] overrideValues = null, float[] overrideSaturations = null)
+    {
+        float[] values = overrideValues;
+        float[] sats = overrideSaturations;
+
+        if (values == null)
+        {
+            if (TryGetLastCellStats(_cachedCellValues, _cachedCellSaturations, _cachedCellHues))
+            {
+                values = _cachedCellValues;
+                sats = _cachedCellSaturations;
+            }
+            else
+            {
+                // データ未取得時のデフォルト結果
+                var def = new CalibrationResult
+                {
+                    BlackThreshold = this.BlackThreshold,
+                    WhiteThreshold = this.WhiteThreshold,
+                    Separability = 0f,
+                    FeltMean = 110f,
+                    FeltStdDev = 10f,
+                    IsDegenerate = true,
+                    Summary = "No frame data available; keeping defaults."
+                };
+                LastCalibration = def;
+                return def;
+            }
+        }
+
+        CalibrationResult result = CalibrateMultiOtsu(values, sats);
+
+        // 閾値を動的反映
+        this.BlackThreshold = result.BlackThreshold;
+        this.WhiteThreshold = result.WhiteThreshold;
+        LastCalibration = result;
+
+        UnityEngine.Debug.Log($"[NativeOthelloRecognizer] Calibrated thresholds: {result}");
+        return result;
+    }
+
+    /// <summary>
+    /// 多クラス大津の2値化法 (Multi-Otsu's Thresholding) による最適決定境界の算出
+    /// クラス間分散 σB^2 を大域的に最大化する境界 (t_black, t_white) を探索。
+    /// 分離度 η またはクラス間距離が不足する場合は 3.5σ 信頼区間ルールへ安全退避。
+    /// </summary>
+    public static CalibrationResult CalibrateMultiOtsu(float[] values, float[] saturations = null)
+    {
+        if (values == null || values.Length < 64)
+        {
+            return new CalibrationResult
+            {
+                BlackThreshold = 65,
+                WhiteThreshold = 165,
+                Separability = 0f,
+                FeltMean = 110f,
+                FeltStdDev = 15f,
+                IsDegenerate = true,
+                Summary = "Invalid values array"
+            };
+        }
+
+        int N = values.Length;
+
+        // 1. 全平均 μT と全分散 σT^2 の算出
+        double sum = 0.0;
+        for (int i = 0; i < N; i++)
+        {
+            sum += values[i];
+        }
+        double muT = sum / N;
+
+        double sumSqDiff = 0.0;
+        for (int i = 0; i < N; i++)
+        {
+            double diff = values[i] - muT;
+            sumSqDiff += diff * diff;
+        }
+        double sigmaT2 = sumSqDiff / N;
+        double sigmaT = Math.Sqrt(sigmaT2);
+
+        // 2. 256階調のヒストグラム作成
+        int[] hist = new int[256];
+        for (int i = 0; i < N; i++)
+        {
+            int bin = Mathf.Clamp(Mathf.RoundToInt(values[i]), 0, 255);
+            hist[bin]++;
+        }
+
+        // 累積度数 P[v] と累積一次モーメント M[v]
+        int[] P = new int[256];
+        double[] M = new double[256];
+        int cumP = 0;
+        double cumM = 0.0;
+        for (int v = 0; v < 256; v++)
+        {
+            cumP += hist[v];
+            cumM += v * hist[v];
+            P[v] = cumP;
+            M[v] = cumM;
+        }
+
+        // 3. Multi-Otsu 最適境界 (t1, t2) の大域探索
+        // t1: 黒石とフェルトの境目 (0 <= t1 < 254)
+        // t2: フェルトと白石の境目 (t1 < t2 < 255)
+        double maxSigmaB2 = -1.0;
+        int bestT1 = 65;
+        int bestT2 = 165;
+        double bestMu0 = 0.0;
+        double bestMu1 = 0.0;
+        double bestMu2 = 0.0;
+
+        for (int t1 = 5; t1 <= 245; t1++)
+        {
+            int n0 = P[t1];
+            if (n0 == 0) continue;
+            double w0 = (double)n0 / N;
+            double u0 = M[t1] / n0;
+
+            for (int t2 = t1 + 6; t2 <= 250; t2++)
+            {
+                int n1 = P[t2] - n0;
+                int n2 = N - P[t2];
+                if (n1 == 0 || n2 == 0) continue;
+
+                double w1 = (double)n1 / N;
+                double w2 = (double)n2 / N;
+
+                double u1 = (M[t2] - M[t1]) / n1;
+                double u2 = (M[255] - M[t2]) / n2;
+
+                // クラス間分散 σB^2 = w0*(u0-muT)^2 + w1*(u1-muT)^2 + w2*(u2-muT)^2
+                double sb2 = w0 * (u0 - muT) * (u0 - muT) +
+                             w1 * (u1 - muT) * (u1 - muT) +
+                             w2 * (u2 - muT) * (u2 - muT);
+
+                if (sb2 > maxSigmaB2)
+                {
+                    maxSigmaB2 = sb2;
+                    bestT1 = t1;
+                    bestT2 = t2;
+                    bestMu0 = u0;
+                    bestMu1 = u1;
+                    bestMu2 = u2;
+                }
+            }
+        }
+
+        // 分離度指標 η = σB^2 / σT^2
+        float eta = (sigmaT2 > 1e-4) ? (float)(maxSigmaB2 / sigmaT2) : 0f;
+        eta = Mathf.Clamp01(eta);
+
+        // フェルトの平均および標準偏差の精密推定 (中央クラスまたは高彩度マス)
+        double feltSum = 0.0;
+        int feltCount = 0;
+        for (int i = 0; i < N; i++)
+        {
+            float v = values[i];
+            bool isChroma = (saturations != null && i < saturations.Length && saturations[i] >= 35f);
+            if (isChroma || (v > bestT1 && v < bestT2))
+            {
+                feltSum += v;
+                feltCount++;
+            }
+        }
+
+        double feltMean = (feltCount > 0) ? (feltSum / feltCount) : muT;
+        double feltSqDiff = 0.0;
+        for (int i = 0; i < N; i++)
+        {
+            float v = values[i];
+            bool isChroma = (saturations != null && i < saturations.Length && saturations[i] >= 35f);
+            if (isChroma || (v > bestT1 && v < bestT2))
+            {
+                double d = v - feltMean;
+                feltSqDiff += d * d;
+            }
+        }
+        double feltStdDev = (feltCount > 1) ? Math.Sqrt(feltSqDiff / feltCount) : Math.Max(sigmaT, 8.0);
+
+        // 4. 退化検定 (Degenerate Case Test)
+        // 石が存在しない空盤面、または明瞭な3峰性がない (η < 0.60 またはクラス間距離不足) 場合
+        bool isDegenerate = (eta < 0.60f) || (bestMu2 - bestMu0 < 45.0) || (sigmaT2 < 120.0);
+
+        int finalTBlack;
+        int finalTWhite;
+
+        if (isDegenerate)
+        {
+            // 3.5σ 信頼区間ルールによる安全境界
+            // フェルトの正規分布から外れる確率 0.02% 未満に設定し、空盤面でフェルトを誤検知させない
+            int safeBlack = Mathf.RoundToInt((float)(feltMean - 3.5 * feltStdDev));
+            int safeWhite = Mathf.RoundToInt((float)(feltMean + 3.5 * feltStdDev));
+
+            finalTBlack = Mathf.Clamp(safeBlack, 20, 95);
+            finalTWhite = Mathf.Clamp(safeWhite, 135, 235);
+        }
+        else
+        {
+            // 3峰クラスタが明瞭な場合:
+            // Multi-Otsu により求めた各クラス重心 (bestMu0:黒石, bestMu1:フェルト, bestMu2:白石) に対し、
+            // オセロ盤特有のサンプル数不均衡 (フェルト50マス vs 石数マス) による境界の偏りを補正。
+            // クラス間のちょうど境目 (Midpoint) に決定境界を線引き。
+            int midBlack = Mathf.RoundToInt((float)((bestMu0 + bestMu1) * 0.5));
+            int midWhite = Mathf.RoundToInt((float)((bestMu1 + bestMu2) * 0.5));
+
+            // フェルトの分散 (3.0σ) との整合性を考慮した安全クリップ
+            int minSafeBlack = Mathf.RoundToInt((float)(feltMean - 3.2 * feltStdDev));
+            int maxSafeBlack = Mathf.RoundToInt((float)(feltMean - 1.5 * feltStdDev));
+            int minSafeWhite = Mathf.RoundToInt((float)(feltMean + 1.5 * feltStdDev));
+            int maxSafeWhite = Mathf.RoundToInt((float)(feltMean + 3.2 * feltStdDev));
+
+            finalTBlack = Mathf.Clamp(midBlack, Mathf.Max(12, minSafeBlack), Mathf.Max(15, maxSafeBlack));
+            finalTWhite = Mathf.Clamp(midWhite, Mathf.Min(235, minSafeWhite), Mathf.Min(242, maxSafeWhite));
+        }
+
+        var result = new CalibrationResult
+        {
+            BlackThreshold = finalTBlack,
+            WhiteThreshold = finalTWhite,
+            Separability = eta,
+            FeltMean = (float)feltMean,
+            FeltStdDev = (float)feltStdDev,
+            Class0Mean = (float)bestMu0,
+            Class1Mean = (float)bestMu1,
+            Class2Mean = (float)bestMu2,
+            IsDegenerate = isDegenerate,
+            Summary = $"B<{finalTBlack}, W>{finalTWhite}, η={eta:F2}"
+        };
+
+        return result;
+    }
+
+    #endregion
 
     public void Dispose()
     {

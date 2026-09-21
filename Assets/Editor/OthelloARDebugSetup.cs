@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -136,18 +137,26 @@ namespace AROthelloEditor
                 Undo.RegisterCreatedObjectUndo(targetBoard, "Create OthelloBoard_AR_Target");
             }
 
-            // ワイヤーフレーム表示のため、ソリッド直方体の MeshRenderer は無効化
+            // 完全ワイヤーフレーム化のため、ソリッド直方体 MeshRenderer を無効化
             var boardMr = targetBoard.GetComponent<MeshRenderer>();
             if (boardMr != null)
             {
                 boardMr.enabled = false;
             }
 
-            // ワイヤーフレーム用マテリアルのロード／生成
-            Material boardWireMat = GetOrCreateTransparentMaterial("Assets/Materials/AR_BoardWireframe.mat", new Color(0.1f, 1.0f, 0.45f, 0.95f));
-            Material whiteWireMat = GetOrCreateTransparentMaterial("Assets/Materials/AR_WhiteWireframe.mat", new Color(0.98f, 0.98f, 1.0f, 0.98f));
-            Material blackWireMat = GetOrCreateTransparentMaterial("Assets/Materials/AR_BlackWireframe.mat", new Color(0.0f, 0.83f, 1.0f, 0.98f));
-            Material highlightWireMat = GetOrCreateTransparentMaterial("Assets/Materials/AR_HighlightWireframe.mat", new Color(1.0f, 0.92f, 0.0f, 0.95f));
+            // 既存の動的子オブジェクトがあればクリーンアップ
+            string[] oldVisualizerChildren = new string[] { "GridLines_Container", "Cells_Container", "Highlights_Container", "Wireframe_Board_Mesh" };
+            foreach (var childName in oldVisualizerChildren)
+            {
+                var childTr = targetBoard.transform.Find(childName);
+                if (childTr != null) UnityEngine.Object.DestroyImmediate(childTr.gameObject);
+            }
+
+            // 前回のバーチャル盤で実証済みの確実なマテリアルをアサイン
+            Material gridLineMat = GetOrCreateMaterial("Assets/Materials/AR_GridLine.mat", new Color(0.2f, 1.0f, 0.5f, 0.95f));
+            Material whiteDiscMat = GetOrCreateMaterial("Assets/Materials/AR_WhiteMarker.mat", new Color(1.0f, 1.0f, 1.0f, 0.95f));
+            Material blackDiscMat = GetOrCreateMaterial("Assets/Materials/AR_AxisBlue.mat", new Color(0.0f, 0.85f, 1.0f, 0.95f));
+            Material highlightMat = GetOrCreateMaterial("Assets/Materials/AR_YellowMarker.mat", new Color(1.0f, 0.85f, 0.0f, 0.95f));
 
             // OthelloBoardVisualizer コンポーネントの設定
             OthelloBoardVisualizer visualizer = targetBoard.GetComponent<OthelloBoardVisualizer>();
@@ -156,34 +165,27 @@ namespace AROthelloEditor
                 visualizer = targetBoard.AddComponent<OthelloBoardVisualizer>();
             }
             visualizer.TargetTeam = 1; // 白番固定
-            visualizer.CustomBoardMaterial = boardWireMat;
-            visualizer.CustomWhiteDiscMaterial = whiteWireMat;
-            visualizer.CustomBlackDiscMaterial = blackWireMat;
-            visualizer.CustomHighlightMaterial = highlightWireMat;
+            visualizer.CustomBoardMaterial = gridLineMat;
+            visualizer.CustomWhiteDiscMaterial = whiteDiscMat;
+            visualizer.CustomBlackDiscMaterial = blackDiscMat;
+            visualizer.CustomHighlightMaterial = highlightMat;
 
-            // 目印となる中心の小さな白丸インジケーター
+            // 背景透過を確保するため中心白丸は不要 (削除)
             Transform centerMarker = targetBoard.transform.Find("CenterIndicator");
-            if (centerMarker == null)
+            if (centerMarker != null)
             {
-                GameObject cmGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                cmGo.name = "CenterIndicator";
-                cmGo.transform.SetParent(targetBoard.transform, false);
-                cmGo.transform.localPosition = new Vector3(0f, 0.55f, 0f);
-                cmGo.transform.localScale = new Vector3(0.08f, 0.05f, 0.08f);
-                Material whiteMat = GetOrCreateMaterial("Assets/Materials/AR_WhiteMarker.mat", new Color(1f, 1f, 1f, 0.8f));
-                if (whiteMat != null) cmGo.GetComponent<Renderer>().sharedMaterial = whiteMat;
-                UnityEngine.Object.DestroyImmediate(cmGo.GetComponent<Collider>());
+                UnityEngine.Object.DestroyImmediate(centerMarker.gameObject);
             }
 
-            // 前方 (+Z) 方向を示す黄色ポインターインジケーター (俯瞰での回転確認用)
+            // 前方 (+Z) 方向を示す細い黄色ポインター (俯瞰での回転確認用)
             Transform forwardMarker = targetBoard.transform.Find("ForwardIndicator");
             if (forwardMarker == null)
             {
-                GameObject fmGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                GameObject fmGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 fmGo.name = "ForwardIndicator";
                 fmGo.transform.SetParent(targetBoard.transform, false);
-                fmGo.transform.localPosition = new Vector3(0f, 0.55f, 0.32f);
-                fmGo.transform.localScale = new Vector3(0.04f, 0.05f, 0.16f);
+                fmGo.transform.localPosition = new Vector3(0f, 0.515f, 0.40f);
+                fmGo.transform.localScale = new Vector3(0.015f, 0.015f, 0.12f);
                 Material yellowMat = GetOrCreateMaterial("Assets/Materials/AR_YellowMarker.mat", new Color(1f, 0.85f, 0f, 0.9f));
                 if (yellowMat != null) fmGo.GetComponent<Renderer>().sharedMaterial = yellowMat;
                 UnityEngine.Object.DestroyImmediate(fmGo.GetComponent<Collider>());
@@ -631,6 +633,7 @@ namespace AROthelloEditor
             }
 
             // 手元用グラスローカル軸反転切り替えアクションバー (Y-Pos, Rot-X, Rot-Z, Rot-Y)
+            // 手元用グラスローカル軸反転切り替え & 動的閾値再設定アクションバー
             GameObject actionBarGo = GameObject.Find("ActionBar_Handheld");
             if (actionBarGo == null)
             {
@@ -645,12 +648,20 @@ namespace AROthelloEditor
                 barRect.anchorMax = new Vector2(0.98f, 0.47f);
                 barRect.offsetMin = Vector2.zero;
                 barRect.offsetMax = Vector2.zero;
-
-                CreateAxisToggleButton(actionBarGo, "Btn_Toggle_YPos", "Y-Pos: INV", new Vector2(0.01f, 0.1f), new Vector2(0.24f, 0.9f), defaultFont, true);
-                CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotX", "Rot-X: INV", new Vector2(0.26f, 0.1f), new Vector2(0.49f, 0.9f), defaultFont, true);
-                CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotZ", "Rot-Z: INV", new Vector2(0.51f, 0.1f), new Vector2(0.74f, 0.9f), defaultFont, true);
-                CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotY", "Rot-Y: NORM", new Vector2(0.76f, 0.1f), new Vector2(0.99f, 0.9f), defaultFont, false);
             }
+
+            // 既存のボタンをクリーンアップして 5 ボタンを再配置
+            for (int b = actionBarGo.transform.childCount - 1; b >= 0; b--)
+            {
+                UnityEngine.Object.DestroyImmediate(actionBarGo.transform.GetChild(b).gameObject);
+            }
+
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_YPos", "Y-Pos: INV", new Vector2(0.01f, 0.1f), new Vector2(0.19f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotX", "Rot-X: INV", new Vector2(0.21f, 0.1f), new Vector2(0.39f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotZ", "Rot-Z: INV", new Vector2(0.41f, 0.1f), new Vector2(0.59f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotY", "Rot-Y: NORM", new Vector2(0.61f, 0.1f), new Vector2(0.79f, 0.9f), defaultFont, false);
+            CreateCustomButton(actionBarGo, "Btn_Recalibrate", "再設定", new Vector2(0.81f, 0.1f), new Vector2(0.99f, 0.9f), defaultFont, new Color(0.95f, 0.52f, 0.08f, 0.95f));
+
             tracker.BindAxisToggleButtons();
 
             // 10. AutoTracker & Logger への参照バインド
@@ -662,10 +673,13 @@ namespace AROthelloEditor
             screenLogger.LogTextComponent = glassesLogText;
             screenLogger.HandheldLogTextComponent = handheldLogText;
 
-            // 変更をマーク
+            // 変更をマーク & シーン保存
             EditorUtility.SetDirty(tracker);
             EditorUtility.SetDirty(screenLogger);
             Selection.activeGameObject = tracker.gameObject;
+
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            EditorSceneManager.SaveOpenScenes();
 
             Debug.Log("<color=#00FF88>SUCCESS: Othello AR Auto Tracker Setup Complete (Glasses Visualizer + Overhead Camera + Dual Monitor)!</color>");
             if (!Application.isBatchMode)
@@ -1020,6 +1034,51 @@ namespace AROthelloEditor
             Text txt = textGo.AddComponent<Text>();
             txt.font = font;
             txt.text = defaultLabel;
+            txt.fontSize = 15;
+            txt.fontStyle = FontStyle.Bold;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = Color.white;
+
+            RectTransform textRect = textGo.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+        }
+
+        private static void CreateCustomButton(
+            GameObject parent,
+            string btnName,
+            string label,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Font font,
+            Color bgColor
+        ) {
+            GameObject btnGo = new GameObject(btnName);
+            btnGo.transform.SetParent(parent.transform, false);
+
+            Image img = btnGo.AddComponent<Image>();
+            img.color = bgColor;
+
+            Button btn = btnGo.AddComponent<Button>();
+            ColorBlock cb = btn.colors;
+            cb.normalColor = Color.white;
+            cb.highlightedColor = new Color(0.9f, 0.9f, 0.9f);
+            cb.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+            btn.colors = cb;
+
+            RectTransform rect = btnGo.GetComponent<RectTransform>();
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            GameObject textGo = new GameObject("Text");
+            textGo.transform.SetParent(btnGo.transform, false);
+            Text txt = textGo.AddComponent<Text>();
+            txt.font = font;
+            txt.text = label;
             txt.fontSize = 15;
             txt.fontStyle = FontStyle.Bold;
             txt.alignment = TextAnchor.MiddleCenter;

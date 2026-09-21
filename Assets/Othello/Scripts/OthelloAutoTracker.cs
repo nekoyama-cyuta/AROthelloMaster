@@ -139,6 +139,10 @@ namespace AROthello
         private Quaternion _smoothWorldRotation;
         private Vector3 _lastEstimatedLocalPos;
 
+        // Dynamic Threshold Calibration state
+        private bool _hasAutoCalibrated = false;
+        private bool _recalibrateRequested = false;
+
         // Camera sources state
         private bool _isXrealCameraActive = false;
         private bool _isWebCamActive = false;
@@ -327,7 +331,49 @@ namespace AROthello
             BindButton("Btn_Toggle_RotX", ToggleInvertLocalRotX);
             BindButton("Btn_Toggle_RotZ", ToggleInvertLocalRotZ);
             BindButton("Btn_Toggle_RotY", ToggleInvertLocalRotY);
+            BindButton("Btn_Recalibrate", RequestRecalibration);
             UpdateAxisButtonLabels();
+        }
+
+        /// <summary>
+        /// ユーザー操作 (Beam Pro 画面の再設定ボタン等) からの閾値再計算リクエスト
+        /// </summary>
+        public void RequestRecalibration()
+        {
+            _recalibrateRequested = true;
+            CustomScreenLogger.Log("<color=#FFD700>[CALIB] Recalibration requested via UI button.</color>");
+        }
+
+        private void CheckAndRunCalibration(bool detected)
+        {
+            if (!detected) return;
+
+            if (!_hasAutoCalibrated)
+            {
+                _hasAutoCalibrated = true;
+                PerformCalibration(true);
+            }
+            else if (_recalibrateRequested)
+            {
+                _recalibrateRequested = false;
+                PerformCalibration(false);
+            }
+        }
+
+        private void PerformCalibration(bool isInitial)
+        {
+            if (_recognizer == null) return;
+
+            var result = _recognizer.CalibrateDynamicThresholds();
+            string tag = isInitial ? "Auto-Startup" : "Manual-Reset";
+            string logMsg = $"<color=#00FF88>[CALIB:{tag}]</color> {result}";
+            CustomScreenLogger.Log(logMsg);
+            UnityEngine.Debug.Log(logMsg);
+
+            if (boardVisualizer != null)
+            {
+                boardVisualizer.CalibrationStatusText = $"[Calib] B<{result.BlackThreshold} | W>{result.WhiteThreshold} (η:{result.Separability:F2})";
+            }
         }
 
         private void BindButton(string goName, UnityEngine.Events.UnityAction action)
@@ -510,6 +556,7 @@ namespace AROthello
 
                 if (detected)
                 {
+                    CheckAndRunCalibration(true);
                     if (boardVisualizer != null)
                     {
                         boardVisualizer.UpdateBoard(_boardState);
@@ -683,6 +730,7 @@ namespace AROthello
 
             if (detected)
             {
+                CheckAndRunCalibration(true);
                 if (boardVisualizer != null)
                 {
                     boardVisualizer.UpdateBoard(_boardState);

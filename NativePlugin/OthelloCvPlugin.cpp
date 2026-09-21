@@ -14,6 +14,12 @@
 
 namespace {
 
+// 64マスの直近 HSV 統計キャッシュ (動的キャリブレーション用)
+static float s_lastCellValues[64];
+static float s_lastCellSaturations[64];
+static float s_lastCellHues[64];
+static bool s_hasCellStats = false;
+
 // 4隅の座標を並べ替え (0:左上, 1:右上, 2:右下, 3:左下)
 void SortCorners(const std::vector<cv::Point>& pts, cv::Point2f outCorners[4]) {
     std::vector<cv::Point> sorted = pts;
@@ -146,9 +152,12 @@ int ProcessBgrImage(
     cv::Mat warped;
     cv::warpPerspective(bgr, warped, M, cv::Size(warpSize, warpSize));
 
-    // 4. 8x8 マス分割 & 石の色判定
+    // 4. 8x8 マス分割 & HSV 統計計算 & 石の色判定
     int cellSize = warpSize / 8;
     int margin = cellSize / 4;
+
+    cv::Mat warpedHsv;
+    cv::cvtColor(warped, warpedHsv, cv::COLOR_BGR2HSV);
 
     for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
@@ -161,10 +170,14 @@ int ProcessBgrImage(
             if (ry + rh > warpSize) rh = warpSize - ry;
 
             cv::Rect roi(rx, ry, rw, rh);
-            cv::Mat cell = warped(roi);
+            cv::Scalar meanHsv = cv::mean(warpedHsv(roi));
+            cv::Scalar meanBgr = cv::mean(warped(roi));
+            double brightness = (meanBgr[0] + meanBgr[1] + meanBgr[2]) / 3.0;
 
-            cv::Scalar mean = cv::mean(cell);
-            double brightness = (mean[0] + mean[1] + mean[2]) / 3.0;
+            int idx = y * 8 + x;
+            s_lastCellHues[idx] = static_cast<float>(meanHsv[0]);        // H: 0..180
+            s_lastCellSaturations[idx] = static_cast<float>(meanHsv[1]); // S: 0..255
+            s_lastCellValues[idx] = static_cast<float>(brightness);     // 輝度: 0..255
 
             int disc = 0; // None
             if (brightness < blackThreshold) {
@@ -173,9 +186,10 @@ int ProcessBgrImage(
                 disc = 2; // White
             }
 
-            outBoard[y * 8 + x] = disc;
+            outBoard[idx] = disc;
         }
     }
+    s_hasCellStats = true;
 
     // 5. 検出結果オーバーレイ描画
     if (outDebugPixels != nullptr) {
@@ -394,6 +408,29 @@ EXPORT_API int OthelloCv_SolvePnP(
         return 1;
     }
     return 0;
+}
+
+/**
+ * @brief 直近の認識フレームにおける 64マスの HSV 統計量を取得 (動的キャリブレーション用)
+ * @param outValues 64要素の明度/輝度配列 (0..255)
+ * @param outSaturations 64要素の彩度配列 (0..255, 任意)
+ * @param outHues 64要素の色相配列 (0..180, 任意)
+ * @return 1: 取得成功, 0: データ未取得
+ */
+EXPORT_API int OthelloCv_GetLastCellStats(
+    float* outValues,
+    float* outSaturations,
+    float* outHues
+) {
+    if (!s_hasCellStats || !outValues) return 0;
+    std::memcpy(outValues, s_lastCellValues, sizeof(float) * 64);
+    if (outSaturations) {
+        std::memcpy(outSaturations, s_lastCellSaturations, sizeof(float) * 64);
+    }
+    if (outHues) {
+        std::memcpy(outHues, s_lastCellHues, sizeof(float) * 64);
+    }
+    return 1;
 }
 
 } // extern "C"
