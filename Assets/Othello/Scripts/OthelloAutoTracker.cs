@@ -143,6 +143,34 @@ namespace AROthello
         private bool _hasAutoCalibrated = false;
         private bool _recalibrateRequested = false;
 
+        public enum OffsetCoordinateMode
+        {
+            ViewHorizontal = 0, // グラス水平視線系（高さ固定・水平面奥手前/左右）★特化モード
+            BoardLocal = 1,      // オセロ盤ローカル系（盤面グリッド前後/左右/法線）
+            WorldAbsolute = 2    // ワールド絶対座標系（東西/南北/天地）
+        }
+
+        // Phase Offset Correction (±6cm = ±0.06m)
+        [Header("Phase Offset Correction (±6cm)")]
+        [SerializeField] private Vector3 viewHorizontalOffset = Vector3.zero; // 水平視線 (x:左右, y:高さ, z:前後)
+        [SerializeField] private Vector3 boardLocalOffset = Vector3.zero;     // 盤面ローカル (x:左右, y:法線, z:前後)
+        [SerializeField] private Vector3 worldAbsoluteOffset = Vector3.zero;   // ワールド絶対 (x:東西, y:天地, z:南北)
+
+        private OffsetCoordinateMode _currentOffsetMode = OffsetCoordinateMode.ViewHorizontal;
+        private Slider _sliderX;
+        private Slider _sliderY;
+        private Slider _sliderZ;
+        private Text _textLabelX;
+        private Text _textLabelY;
+        private Text _textLabelZ;
+        private Text _textOffsetTitle;
+        private Button _btnModeHoriz;
+        private Button _btnModeBoard;
+        private Button _btnModeWorld;
+        private Button _btnOffsetQuick3cm;
+        private Button _btnOffsetReset;
+        private bool _isUpdatingSlidersFromCode = false;
+
         // Camera sources state
         private bool _isXrealCameraActive = false;
         private bool _isWebCamActive = false;
@@ -294,7 +322,27 @@ namespace AROthello
                 StartWebCamera();
             }
 
+            LoadOffsetPrefs();
             BindAxisToggleButtons();
+            BindOffsetControls();
+
+            // グラス側カメラから GlassesVisualizer レイヤー (床面グリッドや矢印) を確実に除外
+            int glassesLayer = LayerMask.NameToLayer("GlassesVisualizer");
+            if (glassesLayer != -1)
+            {
+                Camera mainCam = trackingCamera != null ? trackingCamera : Camera.main;
+                if (mainCam != null)
+                {
+                    mainCam.cullingMask &= ~(1 << glassesLayer);
+                }
+                foreach (var c in Camera.allCameras)
+                {
+                    if (c != null && c.name != "Overhead_Camera")
+                    {
+                        c.cullingMask &= ~(1 << glassesLayer);
+                    }
+                }
+            }
         }
 
         public void ToggleInvertLocalY()
@@ -413,6 +461,297 @@ namespace AROthello
             }
         }
 
+        #region Phase Offset Correction (±6cm)
+
+        public Vector3 ViewHorizontalOffset
+        {
+            get => viewHorizontalOffset;
+            set { viewHorizontalOffset = value; SaveOffsetPrefs(); UpdateOffsetUIElements(); }
+        }
+
+        public Vector3 BoardLocalOffset
+        {
+            get => boardLocalOffset;
+            set { boardLocalOffset = value; SaveOffsetPrefs(); UpdateOffsetUIElements(); }
+        }
+
+        public Vector3 WorldAbsoluteOffset
+        {
+            get => worldAbsoluteOffset;
+            set { worldAbsoluteOffset = value; SaveOffsetPrefs(); UpdateOffsetUIElements(); }
+        }
+
+        public OffsetCoordinateMode CurrentOffsetMode => _currentOffsetMode;
+
+        public void SetOffsetMode(OffsetCoordinateMode mode)
+        {
+            _currentOffsetMode = mode;
+            UpdateOffsetUIElements();
+            string modeName = _currentOffsetMode switch
+            {
+                OffsetCoordinateMode.ViewHorizontal => "グラス水平視線系",
+                OffsetCoordinateMode.BoardLocal => "オセロ盤ローカル系",
+                OffsetCoordinateMode.WorldAbsolute => "ワールド絶対座標系",
+                _ => "Unknown"
+            };
+            CustomScreenLogger.Log($"<color=#00D4FF>[OFFSET] 調整モード: {modeName}</color>");
+        }
+
+        public void SetAxisOffsetCm(int axisIndex, float cmVal)
+        {
+            float mVal = Mathf.Clamp(cmVal, -6.0f, 6.0f) * 0.01f;
+            switch (_currentOffsetMode)
+            {
+                case OffsetCoordinateMode.ViewHorizontal:
+                    if (axisIndex == 0) viewHorizontalOffset.x = mVal;
+                    else if (axisIndex == 1) viewHorizontalOffset.y = mVal;
+                    else if (axisIndex == 2) viewHorizontalOffset.z = mVal;
+                    break;
+                case OffsetCoordinateMode.BoardLocal:
+                    if (axisIndex == 0) boardLocalOffset.x = mVal;
+                    else if (axisIndex == 1) boardLocalOffset.y = mVal;
+                    else if (axisIndex == 2) boardLocalOffset.z = mVal;
+                    break;
+                case OffsetCoordinateMode.WorldAbsolute:
+                    if (axisIndex == 0) worldAbsoluteOffset.x = mVal;
+                    else if (axisIndex == 1) worldAbsoluteOffset.y = mVal;
+                    else if (axisIndex == 2) worldAbsoluteOffset.z = mVal;
+                    break;
+            }
+            SaveOffsetPrefs();
+            UpdateOffsetLabelsOnly();
+        }
+
+        public void ApplyQuick3cmOffset()
+        {
+            // 奥側3cmズレを相殺するため、現在モードの前後軸 (Z軸) を -3.0cm (-0.03m) に即座に設定
+            float mVal = -0.03f;
+            switch (_currentOffsetMode)
+            {
+                case OffsetCoordinateMode.ViewHorizontal:
+                    viewHorizontalOffset.z = mVal;
+                    break;
+                case OffsetCoordinateMode.BoardLocal:
+                    boardLocalOffset.z = mVal;
+                    break;
+                case OffsetCoordinateMode.WorldAbsolute:
+                    worldAbsoluteOffset.z = mVal;
+                    break;
+            }
+            SaveOffsetPrefs();
+            UpdateOffsetUIElements();
+            CustomScreenLogger.Log("<color=#FFD700>[OFFSET] クイック補正: 手前 -3.0cm 適用完了</color>");
+        }
+
+        public void ResetCurrentOffsets()
+        {
+            switch (_currentOffsetMode)
+            {
+                case OffsetCoordinateMode.ViewHorizontal:
+                    viewHorizontalOffset = Vector3.zero;
+                    break;
+                case OffsetCoordinateMode.BoardLocal:
+                    boardLocalOffset = Vector3.zero;
+                    break;
+                case OffsetCoordinateMode.WorldAbsolute:
+                    worldAbsoluteOffset = Vector3.zero;
+                    break;
+            }
+            SaveOffsetPrefs();
+            UpdateOffsetUIElements();
+            CustomScreenLogger.Log($"<color=#FFD700>[OFFSET] リセット: {_currentOffsetMode} オフセットを 0.0cm に初期化</color>");
+        }
+
+        public void BindOffsetControls()
+        {
+            _sliderX = GameObject.Find("Slider_Offset_X")?.GetComponent<Slider>();
+            _sliderY = GameObject.Find("Slider_Offset_Y")?.GetComponent<Slider>();
+            _sliderZ = GameObject.Find("Slider_Offset_Z")?.GetComponent<Slider>();
+
+            _textLabelX = GameObject.Find("Text_Offset_X")?.GetComponent<Text>();
+            _textLabelY = GameObject.Find("Text_Offset_Y")?.GetComponent<Text>();
+            _textLabelZ = GameObject.Find("Text_Offset_Z")?.GetComponent<Text>();
+            _textOffsetTitle = GameObject.Find("Text_Offset_Title")?.GetComponent<Text>();
+
+            _btnModeHoriz = GameObject.Find("Btn_OffsetMode_Horiz")?.GetComponent<Button>();
+            _btnModeBoard = GameObject.Find("Btn_OffsetMode_Board")?.GetComponent<Button>();
+            _btnModeWorld = GameObject.Find("Btn_OffsetMode_World")?.GetComponent<Button>();
+            _btnOffsetQuick3cm = GameObject.Find("Btn_Offset_Quick3cm")?.GetComponent<Button>();
+            _btnOffsetReset = GameObject.Find("Btn_Offset_Reset")?.GetComponent<Button>();
+
+            if (_sliderX != null)
+            {
+                _sliderX.minValue = -6.0f;
+                _sliderX.maxValue = 6.0f;
+                _sliderX.onValueChanged.RemoveAllListeners();
+                _sliderX.onValueChanged.AddListener(val => { if (!_isUpdatingSlidersFromCode) SetAxisOffsetCm(0, val); });
+            }
+            if (_sliderY != null)
+            {
+                _sliderY.minValue = -6.0f;
+                _sliderY.maxValue = 6.0f;
+                _sliderY.onValueChanged.RemoveAllListeners();
+                _sliderY.onValueChanged.AddListener(val => { if (!_isUpdatingSlidersFromCode) SetAxisOffsetCm(1, val); });
+            }
+            if (_sliderZ != null)
+            {
+                _sliderZ.minValue = -6.0f;
+                _sliderZ.maxValue = 6.0f;
+                _sliderZ.onValueChanged.RemoveAllListeners();
+                _sliderZ.onValueChanged.AddListener(val => { if (!_isUpdatingSlidersFromCode) SetAxisOffsetCm(2, val); });
+            }
+
+            if (_btnModeHoriz != null)
+            {
+                _btnModeHoriz.onClick.RemoveAllListeners();
+                _btnModeHoriz.onClick.AddListener(() => SetOffsetMode(OffsetCoordinateMode.ViewHorizontal));
+            }
+            if (_btnModeBoard != null)
+            {
+                _btnModeBoard.onClick.RemoveAllListeners();
+                _btnModeBoard.onClick.AddListener(() => SetOffsetMode(OffsetCoordinateMode.BoardLocal));
+            }
+            if (_btnModeWorld != null)
+            {
+                _btnModeWorld.onClick.RemoveAllListeners();
+                _btnModeWorld.onClick.AddListener(() => SetOffsetMode(OffsetCoordinateMode.WorldAbsolute));
+            }
+            if (_btnOffsetQuick3cm != null)
+            {
+                _btnOffsetQuick3cm.onClick.RemoveAllListeners();
+                _btnOffsetQuick3cm.onClick.AddListener(ApplyQuick3cmOffset);
+            }
+            if (_btnOffsetReset != null)
+            {
+                _btnOffsetReset.onClick.RemoveAllListeners();
+                _btnOffsetReset.onClick.AddListener(ResetCurrentOffsets);
+            }
+
+            UpdateOffsetUIElements();
+        }
+
+        public void UpdateOffsetUIElements()
+        {
+            _isUpdatingSlidersFromCode = true;
+            Vector3 currentOffset = GetCurrentModeOffset();
+
+            // スライダー値更新 (-6.0 .. +6.0 cm)
+            if (_sliderX != null) _sliderX.value = currentOffset.x * 100f;
+            if (_sliderY != null) _sliderY.value = currentOffset.y * 100f;
+            if (_sliderZ != null) _sliderZ.value = currentOffset.z * 100f;
+
+            _isUpdatingSlidersFromCode = false;
+
+            UpdateOffsetLabelsOnly();
+
+            // モードボタンのハイライトカラー更新
+            SetButtonColor(_btnModeHoriz, _currentOffsetMode == OffsetCoordinateMode.ViewHorizontal, new Color(0f, 0.65f, 0.85f, 0.95f));
+            SetButtonColor(_btnModeBoard, _currentOffsetMode == OffsetCoordinateMode.BoardLocal, new Color(0.1f, 0.8f, 0.75f, 0.95f));
+            SetButtonColor(_btnModeWorld, _currentOffsetMode == OffsetCoordinateMode.WorldAbsolute, new Color(0.1f, 0.75f, 0.35f, 0.95f));
+
+            if (_textOffsetTitle != null)
+            {
+                _textOffsetTitle.text = _currentOffsetMode switch
+                {
+                    OffsetCoordinateMode.ViewHorizontal => "位置微調整: [水平視線系(高さ固定)]",
+                    OffsetCoordinateMode.BoardLocal => "位置微調整: [オセロ盤ローカル系]",
+                    OffsetCoordinateMode.WorldAbsolute => "位置微調整: [絶対座標系(ワールド)]",
+                    _ => "位置微調整"
+                };
+            }
+        }
+
+        private void SetButtonColor(Button btn, bool isActive, Color activeColor)
+        {
+            if (btn == null) return;
+            var img = btn.GetComponent<Image>();
+            if (img != null)
+            {
+                img.color = isActive ? activeColor : new Color(0.2f, 0.22f, 0.26f, 0.95f);
+            }
+        }
+
+        private Vector3 GetCurrentModeOffset()
+        {
+            return _currentOffsetMode switch
+            {
+                OffsetCoordinateMode.ViewHorizontal => viewHorizontalOffset,
+                OffsetCoordinateMode.BoardLocal => boardLocalOffset,
+                OffsetCoordinateMode.WorldAbsolute => worldAbsoluteOffset,
+                _ => Vector3.zero
+            };
+        }
+
+        private void UpdateOffsetLabelsOnly()
+        {
+            Vector3 currentOffset = GetCurrentModeOffset();
+            float cx = currentOffset.x * 100f;
+            float cy = currentOffset.y * 100f;
+            float cz = currentOffset.z * 100f;
+
+            string xDesc, yDesc, zDesc;
+            switch (_currentOffsetMode)
+            {
+                case OffsetCoordinateMode.ViewHorizontal:
+                    xDesc = "X(視線 左右)";
+                    yDesc = "Y(垂直 高さ)";
+                    zDesc = "Z(水平 奥/前)";
+                    break;
+                case OffsetCoordinateMode.BoardLocal:
+                    xDesc = "X(盤面 左右)";
+                    yDesc = "Y(盤面 法線)";
+                    zDesc = "Z(盤面 奥/前)";
+                    break;
+                case OffsetCoordinateMode.WorldAbsolute:
+                default:
+                    xDesc = "X(世界 東/西)";
+                    yDesc = "Y(世界 天/地)";
+                    zDesc = "Z(世界 北/南)";
+                    break;
+            }
+
+            if (_textLabelX != null) _textLabelX.text = $"{xDesc}: {(cx >= 0 ? "+" : "")}{cx:F1}cm";
+            if (_textLabelY != null) _textLabelY.text = $"{yDesc}: {(cy >= 0 ? "+" : "")}{cy:F1}cm";
+            if (_textLabelZ != null) _textLabelZ.text = $"{zDesc}: {(cz >= 0 ? "+" : "")}{cz:F1}cm";
+        }
+
+        private void SaveOffsetPrefs()
+        {
+            PlayerPrefs.SetInt("OthelloAR_OffsetMode", (int)_currentOffsetMode);
+
+            PlayerPrefs.SetFloat("OthelloAR_HorizOffset_X", viewHorizontalOffset.x);
+            PlayerPrefs.SetFloat("OthelloAR_HorizOffset_Y", viewHorizontalOffset.y);
+            PlayerPrefs.SetFloat("OthelloAR_HorizOffset_Z", viewHorizontalOffset.z);
+
+            PlayerPrefs.SetFloat("OthelloAR_BoardOffset_X", boardLocalOffset.x);
+            PlayerPrefs.SetFloat("OthelloAR_BoardOffset_Y", boardLocalOffset.y);
+            PlayerPrefs.SetFloat("OthelloAR_BoardOffset_Z", boardLocalOffset.z);
+
+            PlayerPrefs.SetFloat("OthelloAR_WorldOffset_X", worldAbsoluteOffset.x);
+            PlayerPrefs.SetFloat("OthelloAR_WorldOffset_Y", worldAbsoluteOffset.y);
+            PlayerPrefs.SetFloat("OthelloAR_WorldOffset_Z", worldAbsoluteOffset.z);
+            PlayerPrefs.Save();
+        }
+
+        private void LoadOffsetPrefs()
+        {
+            _currentOffsetMode = (OffsetCoordinateMode)PlayerPrefs.GetInt("OthelloAR_OffsetMode", (int)OffsetCoordinateMode.ViewHorizontal);
+
+            viewHorizontalOffset.x = PlayerPrefs.GetFloat("OthelloAR_HorizOffset_X", 0f);
+            viewHorizontalOffset.y = PlayerPrefs.GetFloat("OthelloAR_HorizOffset_Y", 0f);
+            viewHorizontalOffset.z = PlayerPrefs.GetFloat("OthelloAR_HorizOffset_Z", 0f);
+
+            boardLocalOffset.x = PlayerPrefs.GetFloat("OthelloAR_BoardOffset_X", 0f);
+            boardLocalOffset.y = PlayerPrefs.GetFloat("OthelloAR_BoardOffset_Y", 0f);
+            boardLocalOffset.z = PlayerPrefs.GetFloat("OthelloAR_BoardOffset_Z", 0f);
+
+            worldAbsoluteOffset.x = PlayerPrefs.GetFloat("OthelloAR_WorldOffset_X", 0f);
+            worldAbsoluteOffset.y = PlayerPrefs.GetFloat("OthelloAR_WorldOffset_Y", 0f);
+            worldAbsoluteOffset.z = PlayerPrefs.GetFloat("OthelloAR_WorldOffset_Z", 0f);
+        }
+
+        #endregion
+
 #if !UNITY_EDITOR && (UNITY_ANDROID || UNITY_IOS)
         private async void Enable6DoFTracking()
         {
@@ -530,9 +869,12 @@ namespace AROthello
         {
             try
             {
+                var swTotal = System.Diagnostics.Stopwatch.StartNew();
+
                 const int procW = 640;
                 const int procH = 360;
 
+                var swCapture = System.Diagnostics.Stopwatch.StartNew();
                 if (!_hasCameraIntrinsics)
                 {
                     InitializeXrealCameraParameters(width, height, procW, procH);
@@ -544,7 +886,10 @@ namespace AROthello
                     _debugTexture = new Texture2D(procW, procH, TextureFormat.RGBA32, false);
                 }
                 SyncPreviewTextures();
+                swCapture.Stop();
+                float capMs = (float)swCapture.Elapsed.TotalMilliseconds;
 
+                var swRec = System.Diagnostics.Stopwatch.StartNew();
                 bool detected = _recognizer.TryRecognizeNativeYuvPlanes(
                     yPtr, uPtr, vPtr,
                     width, height,
@@ -553,6 +898,11 @@ namespace AROthello
                     _debugTexture,
                     procW, procH
                 );
+                swRec.Stop();
+                float recMs = (float)swRec.Elapsed.TotalMilliseconds;
+
+                float algMs = 0f;
+                float renMs = 0f;
 
                 if (detected)
                 {
@@ -560,11 +910,22 @@ namespace AROthello
                     if (boardVisualizer != null)
                     {
                         boardVisualizer.UpdateBoard(_boardState);
+                        algMs = boardVisualizer.LastAlgorithmLatencyMs;
+                        renMs = boardVisualizer.LastRenderLatencyMs;
                     }
                     if (_corners != null && _corners.Length >= 4)
                     {
                         UpdatePoseFromCorners(procW, procH, _corners);
                     }
+                }
+
+                swTotal.Stop();
+                float totMs = (float)swTotal.Elapsed.TotalMilliseconds;
+
+                if (PerformanceLogger.Instance != null)
+                {
+                    PerformanceLogger.Instance.SetPipelineLatencies(capMs, recMs, algMs, renMs, totMs);
+                    UpdatePerformanceMetrics();
                 }
             }
             catch (Exception ex)
@@ -714,19 +1075,30 @@ namespace AROthello
 
         private void ProcessCameraFrame()
         {
+            var swTotal = System.Diagnostics.Stopwatch.StartNew();
+
             int imgW = _webCamTexture.width;
             int imgH = _webCamTexture.height;
             if (imgW <= 16 || imgH <= 16) return;
 
+            var swCapture = System.Diagnostics.Stopwatch.StartNew();
             // デバッグテクスチャの準備
             if (_debugTexture == null || _debugTexture.width != imgW || _debugTexture.height != imgH)
             {
                 _debugTexture = new Texture2D(imgW, imgH, TextureFormat.RGBA32, false);
             }
             SyncPreviewTextures();
+            swCapture.Stop();
+            float capMs = (float)swCapture.Elapsed.TotalMilliseconds;
 
+            var swRec = System.Diagnostics.Stopwatch.StartNew();
             // 1. NativeOthelloRecognizer で盤面検出
             bool detected = _recognizer.TryRecognizeWebCam(_webCamTexture, _boardState, _corners, _debugTexture);
+            swRec.Stop();
+            float recMs = (float)swRec.Elapsed.TotalMilliseconds;
+
+            float algMs = 0f;
+            float renMs = 0f;
 
             if (detected)
             {
@@ -734,12 +1106,45 @@ namespace AROthello
                 if (boardVisualizer != null)
                 {
                     boardVisualizer.UpdateBoard(_boardState);
+                    algMs = boardVisualizer.LastAlgorithmLatencyMs;
+                    renMs = boardVisualizer.LastRenderLatencyMs;
                 }
                 if (_corners != null && _corners.Length >= 4)
                 {
                     UpdatePoseFromCorners(imgW, imgH, _corners);
                 }
             }
+
+            swTotal.Stop();
+            float totMs = (float)swTotal.Elapsed.TotalMilliseconds;
+
+            if (PerformanceLogger.Instance != null)
+            {
+                PerformanceLogger.Instance.SetPipelineLatencies(capMs, recMs, algMs, renMs, totMs);
+                UpdatePerformanceMetrics();
+            }
+        }
+
+        private void UpdatePerformanceMetrics()
+        {
+            if (PerformanceLogger.Instance == null) return;
+
+            Camera cam = trackingCamera != null ? trackingCamera : Camera.main;
+            Transform camTr = cam != null ? cam.transform : transform;
+            Transform boardTr = targetBoardTransform != null ? targetBoardTransform : transform;
+
+            // 1. Head_Distance_cm
+            float distCm = Vector3.Distance(camTr.position, boardTr.position) * 100f;
+
+            // 2. Head_Angle_deg (盤面法線Upに対するカメラ方向の見下ろし角度)
+            Vector3 dirToCam = (camTr.position - boardTr.position).normalized;
+            float angleDeg = Vector3.Angle(boardTr.up, dirToCam);
+
+            // 3. Tracking_Offset_mm (現在適用されているオフセットの大きさ)
+            Vector3 curOffset = GetCurrentModeOffset();
+            float offsetMm = curOffset.magnitude * 1000f;
+
+            PerformanceLogger.Instance.SetTrackingMetrics(distCm, angleDeg, offsetMm);
         }
 
         /// <summary>
@@ -765,6 +1170,39 @@ namespace AROthello
                 // 法線 (Up) の逆方向に厚みの半分 (0.009m) をオフセットして実機と体積を完全に一致させる
                 Vector3 boardUp = rawWorldRot * Vector3.up;
                 rawWorldPos -= boardUp * (boardThicknessMeters * 0.5f);
+
+                // 【特化型オフセット補正 (±6cm)】
+                if (_currentOffsetMode == OffsetCoordinateMode.ViewHorizontal)
+                {
+                    // グラス水平視線系: 重力Y軸を除外した水平奥/手前 ＆ 左右
+                    Vector3 camForward = camTransform.forward;
+                    Vector3 camRight = camTransform.right;
+                    Vector3 horizForward = Vector3.ProjectOnPlane(camForward, Vector3.up).normalized;
+                    Vector3 horizRight = Vector3.ProjectOnPlane(camRight, Vector3.up).normalized;
+                    if (horizForward.sqrMagnitude < 0.001f) horizForward = Vector3.forward;
+                    if (horizRight.sqrMagnitude < 0.001f) horizRight = Vector3.right;
+
+                    Vector3 viewHorizShift = (horizRight * viewHorizontalOffset.x) +
+                                             (Vector3.up * viewHorizontalOffset.y) +
+                                             (horizForward * viewHorizontalOffset.z);
+                    rawWorldPos += viewHorizShift;
+                }
+                else if (_currentOffsetMode == OffsetCoordinateMode.BoardLocal)
+                {
+                    // オセロ盤ローカル系: 盤面左右、盤面法線、盤面奥
+                    Vector3 bRight = rawWorldRot * Vector3.right;
+                    Vector3 bUp = rawWorldRot * Vector3.up;
+                    Vector3 bForward = rawWorldRot * Vector3.forward;
+
+                    Vector3 boardShift = (bRight * boardLocalOffset.x) +
+                                         (bUp * boardLocalOffset.y) +
+                                         (bForward * boardLocalOffset.z);
+                    rawWorldPos += boardShift;
+                }
+                else // WorldAbsolute
+                {
+                    rawWorldPos += worldAbsoluteOffset;
+                }
 
                 if (!_hasFirstPose)
                 {

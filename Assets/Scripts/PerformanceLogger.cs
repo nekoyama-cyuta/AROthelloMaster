@@ -5,246 +5,259 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using UnityEngine.UI;
 using Debug = UnityEngine.Debug;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
 
-/// <summary>
-/// 【実機・ARグラス（XREAL等）対応】
-/// 性能検証データ自動常時測定・リアルタイムCSVエクスポートスクリプト
-/// 
-/// ・グラス装着中のためボタン操作不要（起動と同時に自動常時ロギング）
-/// ・突発的なアプリ終了・ケーブル切断でもデータを失わない自動フラッシュ（定期追記）機構
-/// ・Androidのライフサイクル（OnApplicationPause/Quit）に完全対応
-/// </summary>
-[DisallowMultipleComponent]
-public class PerformanceLogger : MonoBehaviour
+namespace AROthello
 {
-    public static PerformanceLogger Instance { get; private set; }
-
-    [Header("Target References (Auto-assigned if null)")]
-    [Tooltip("ARカメラのTransform (nullの場合はCamera.mainを自動参照)")]
-    [SerializeField] private Transform arCamera;
-
-    [Tooltip("オセロ盤オブジェクトのTransform")]
-    [SerializeField] private Transform boardTransform;
-
-    [Tooltip("物理盤面マーカーのTransform (Tracking_Offset計測用)")]
-    [SerializeField] private Transform physicalMarkerTransform;
-
-    [Tooltip("仮想ハイライト中心のTransform (Tracking_Offset計測用)")]
-    [SerializeField] private Transform virtualHighlightTransform;
-
-    [Header("Hands-Free & Real-Device Settings")]
-    [Tooltip("ARグラス実機向け: 起動と同時に自動で常時ロギングを開始します（ボタン操作不要）")]
-    [SerializeField] private bool autoStartLogging = true;
-
-    [Tooltip("ディスクへの自動フラッシュ間隔（フレーム数）。定期的に追記書き込みを行い、クラッシュや強制終了時のデータ消失を防ぎます")]
-    [SerializeField] private int autoFlushIntervalFrames = 60; // 60fps環境で約1秒ごと
-
-    [Tooltip("保存先サブディレクトリ名 (実機ではApplication.persistentDataPath、エディタではプロジェクト直下に作成)")]
-    [SerializeField] private string exportSubFolder = "Exports";
-
-    [Tooltip("AR視界内にデバッグ用HUDを表示するかどうか")]
-    [SerializeField] private bool showOnScreenHUD = true;
-
-    // ロギング状態
-    private bool _isLogging = false;
-    public bool IsLogging => _isLogging;
-
-    // ファイルストリーム管理（リアルタイム追記ストリーミング）
-    private FileStream _fileStream;
-    private StreamWriter _streamWriter;
-    private string _currentLogFilePath = "";
-    public string CurrentLogFilePath => _currentLogFilePath;
-
-    private readonly StringBuilder _rowBuffer = new StringBuilder(4096);
-    private int _pendingFramesCount = 0;
-    private long _totalRecordedFrames = 0;
-    public long TotalRecordedFrames => _totalRecordedFrames;
-
-    // パイプラインごとのレイテンシ計測用 Stopwatch
-    private readonly Stopwatch _swCapture = new Stopwatch();
-    private readonly Stopwatch _swRecognition = new Stopwatch();
-    private readonly Stopwatch _swAlgorithm = new Stopwatch();
-    private readonly Stopwatch _swRender = new Stopwatch();
-    private readonly Stopwatch _swFrameTotal = new Stopwatch();
-
-    // 最新フレームのレイテンシ値 (ms)
-    private double _currentLatencyCapture = 0.0;
-    private double _currentLatencyRecognition = 0.0;
-    private double _currentLatencyAlgorithm = 0.0;
-    private double _currentLatencyRender = 0.0;
-    private double _currentLatencyTotal = 0.0;
-
-    // 外部から明示的にセットされたTracking Offset (mm) のオーバーライド用
-    private float? _manualTrackingOffsetMm = null;
-
-    // FPS算出用 (直近1秒間の平均FPS)
-    private readonly Queue<float> _fpsTimeQueue = new Queue<float>(120);
-
-    // チャタリング検知用 (直近1秒間の合法手反転回数)
-    private ulong _previousLegalMovesMask = 0UL;
-    private bool _hasPreviousLegalMoves = false;
-    private readonly Queue<float> _flickerTimeQueue = new Queue<float>(64);
-    private int _currentFlickerCount1s = 0;
-
-    // CSVヘッダー行定義
-    private const string CSV_HEADER = "Timestamp,FrameCount,CurrentFPS,Latency_Total_ms,Latency_Capture_ms,Latency_Recognition_ms,Latency_Algorithm_ms,Latency_Render_ms,Head_Distance_cm,Head_Angle_deg,Tracking_Offset_mm,Move_Flicker_Count_1s,Algorithm_Accuracy_Flag";
-
-    private void Awake()
+    /// <summary>
+    /// 【XREAL Beam Pro / ARプロジェクト向け性能検証データ自動測定・CSV一括エクスポートスクリプト】
+    /// 
+    /// 要件:
+    /// 1. 13項目の測定・記録 (Timestamp, FrameCount, CurrentFPS, Latencies, Head Metrics, Tracking Offset, Move_Flicker_Count_1s, Algorithm_Accuracy_Flag)
+    /// 2. 合法手判定の直近1秒間チャタリング検知
+    /// 3. Beam Pro画面タップでToggleLogging() & UI更新 (待機中: START / 記録中: REC [STOP & SAVE])、Spaceキー対応
+    /// 4. Stopwatch高精度計測、メモリバッファリング、persistentDataPath / Exports への UTF-8 CSV 自動エクスポート
+    /// </summary>
+    [DisallowMultipleComponent]
+    public class PerformanceLogger : MonoBehaviour
     {
-        if (Instance != null && Instance != this)
+        public static PerformanceLogger Instance { get; private set; }
+
+        [Header("UI References (Beam Pro Touch Screen)")]
+        [Tooltip("Beam Pro 画面上のロギング開始/停止ボタン")]
+        [SerializeField] private Button logToggleButton;
+        [SerializeField] private Text logButtonText;
+
+        [Header("Target References (Optional / Auto-detected)")]
+        [SerializeField] private Transform arCamera;
+        [SerializeField] private Transform boardTransform;
+
+        [Header("Status")]
+        [SerializeField] private bool isLogging = false;
+
+        public bool IsLogging => isLogging;
+
+        // CSV Header (13項目)
+        private const string CSV_HEADER =
+            "Timestamp,FrameCount,CurrentFPS,Latency_Total_ms,Latency_Capture_ms,Latency_Recognition_ms," +
+            "Latency_Algorithm_ms,Latency_Render_ms,Head_Distance_cm,Head_Angle_deg,Tracking_Offset_mm," +
+            "Move_Flicker_Count_1s,Algorithm_Accuracy_Flag";
+
+        // メモリ内バッファ (フレームごとのディスクIOを完全回避)
+        private readonly List<string> _logBuffer = new List<string>(8192);
+
+        // チャタリング (合法手判定の揺れ) 検知用
+        private ulong _prevLegalMovesBitmask = 0UL;
+        private bool _hasPrevLegalMoves = false;
+        private readonly Queue<float> _flickerTimestamps = new Queue<float>(64);
+
+        // FPS 計算用 (直近1秒間の平均FPS)
+        private int _fpsAccumFrameCount = 0;
+        private float _fpsAccumTime = 0f;
+        private float _currentFps = 60.0f;
+
+        // パイプライン計測値 (ミリ秒)
+        private float _latencyCaptureMs = 0f;
+        private float _latencyRecognitionMs = 0f;
+        private float _latencyAlgorithmMs = 0f;
+        private float _latencyRenderMs = 0f;
+        private float _latencyTotalMs = 0f;
+
+        // 姿勢・トラッキング指標
+        private float _headDistanceCm = 0f;
+        private float _headAngleDeg = 0f;
+        private float _trackingOffsetMm = 0f;
+
+        // 記録セッション状態
+        private float _loggingStartTime = 0f;
+        private int _recordedFrameCountInSession = 0;
+
+        private void Awake()
         {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+            else if (Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
 
-        // ARカメラの自動検出
-        if (arCamera == null && Camera.main != null)
-        {
-            arCamera = Camera.main.transform;
-        }
-    }
-
-    private void Start()
-    {
-        // 実機向け: 起動時に自動で常時ロギングを開始
-        if (autoStartLogging)
-        {
-            StartLogging();
-        }
-    }
-
-    private void Update()
-    {
-        // 開発PCでの検証用: [Space] キーによる手動トグルも可能
-        HandleSpaceInput();
-
-        // 直近1秒間の平均FPS計測 (スライディングウィンドウ)
-        UpdateFpsCalculation();
-
-        // チャタリングキューの期限切れ破棄 (直近1秒外)
-        CleanExpiredFlickers(Time.unscaledTime);
-
-        // フレーム総処理時間の計測開始
-        if (!_swFrameTotal.IsRunning)
-        {
-            _swFrameTotal.Restart();
-        }
-    }
-
-    private void LateUpdate()
-    {
-        if (!_isLogging || _streamWriter == null) return;
-
-        // 1. フレーム総処理時間 (ms) の確定
-        _swFrameTotal.Stop();
-        _currentLatencyTotal = _swFrameTotal.Elapsed.TotalMilliseconds;
-        _swFrameTotal.Restart();
-
-        // 2. カメラと盤面の距離・角度・オフセットの算出
-        CalculateSpatialMetrics(out float distanceCm, out float angleDeg, out float offsetMm);
-
-        // 3. CSV 1行分のデータをフォーマットして一時バッファに追記
-        string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-        float currentFps = CalculateCurrentFps();
-
-        _rowBuffer.Append(timestamp).Append(',');
-        _rowBuffer.Append(Time.frameCount).Append(',');
-        _rowBuffer.Append(currentFps.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentLatencyTotal.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentLatencyCapture.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentLatencyRecognition.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentLatencyAlgorithm.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentLatencyRender.ToString("F3", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(distanceCm.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(angleDeg.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(offsetMm.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
-        _rowBuffer.Append(_currentFlickerCount1s).Append(',');
-        _rowBuffer.Append("\"\""); // Algorithm_Accuracy_Flag (目視確認用の手動入力欄として常に空文字)
-        _rowBuffer.AppendLine();
-
-        _pendingFramesCount++;
-        _totalRecordedFrames++;
-
-        // 4. 定期的にディスクへフラッシュ（長時間の常時ロギングでもメモリを消費せず、突発終了にも強い）
-        if (_pendingFramesCount >= autoFlushIntervalFrames)
-        {
-            FlushBufferToDisk();
+            if (arCamera == null && Camera.main != null)
+            {
+                arCamera = Camera.main.transform;
+            }
         }
 
-        // フレーム毎の計測値をリセット (次回フレームで計測されない場合は0)
-        _currentLatencyCapture = 0.0;
-        _currentLatencyRecognition = 0.0;
-        _currentLatencyAlgorithm = 0.0;
-        _currentLatencyRender = 0.0;
-        _manualTrackingOffsetMm = null;
-    }
+        private void Start()
+        {
+            BindUIControls();
+            UpdateUIState();
+        }
 
-    #region Input Handling (Optional for PC Debug)
+        private void Update()
+        {
+            // 1. 直近1秒間の平均FPS計測
+            _fpsAccumFrameCount++;
+            _fpsAccumTime += Time.unscaledDeltaTime;
+            if (_fpsAccumTime >= 1.0f)
+            {
+                _currentFps = _fpsAccumFrameCount / _fpsAccumTime;
+                _fpsAccumFrameCount = 0;
+                _fpsAccumTime = 0f;
+            }
 
-    private void HandleSpaceInput()
-    {
-        bool spacePressed = false;
+            // 2. エディタ実行時等のキーボード操作 (Spaceキーでトグル)
+            HandleSpaceInput();
 
+            // 3. チャタリングキューの期限切れ破棄 (直近1.0秒外の履歴を削除)
+            float now = Time.unscaledTime;
+            while (_flickerTimestamps.Count > 0 && (now - _flickerTimestamps.Peek()) > 1.0f)
+            {
+                _flickerTimestamps.Dequeue();
+            }
+
+            // 4. 記録中であればフレームデータをメモリバッファへ追加
+            if (isLogging)
+            {
+                RecordCurrentFrame();
+                UpdateRecordingUI();
+            }
+        }
+
+        private void HandleSpaceInput()
+        {
 #if ENABLE_INPUT_SYSTEM
-        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
-        {
-            spacePressed = true;
-        }
+            if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+            {
+                ToggleLogging();
+            }
+#else
+            if (Input.GetKeyDown(KeyCode.Space))
+            {
+                ToggleLogging();
+            }
 #endif
-
-#if ENABLE_LEGACY_INPUT_MANAGER
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            spacePressed = true;
         }
-#endif
 
-        if (spacePressed)
+        private void OnApplicationQuit()
         {
-            ToggleLogging();
+            if (isLogging)
+            {
+                StopLoggingAndSave();
+            }
         }
-    }
 
-    #endregion
-
-    #region Public Control & State
-
-    /// <summary>
-    /// ロギングの「開始 / 停止」をトグルします。
-    /// </summary>
-    public void ToggleLogging()
-    {
-        if (_isLogging)
+        private void OnApplicationPause(bool pauseStatus)
         {
-            StopLogging();
+            if (pauseStatus && isLogging)
+            {
+                // アプリがバックグラウンドに移行した際に自動退避
+                StopLoggingAndSave();
+            }
         }
-        else
+
+        #region Public Recording API (Called by OthelloAutoTracker / Pipeline)
+
+        /// <summary>
+        /// パイプライン各ステージのレイテンシ (ms) を登録
+        /// </summary>
+        public void SetPipelineLatencies(float captureMs, float recognitionMs, float algorithmMs, float renderMs, float totalMs)
         {
-            StartLogging();
+            _latencyCaptureMs = captureMs;
+            _latencyRecognitionMs = recognitionMs;
+            _latencyAlgorithmMs = algorithmMs;
+            _latencyRenderMs = renderMs;
+            _latencyTotalMs = totalMs;
         }
-    }
 
-    /// <summary>
-    /// 常時ロギングを開始し、新しいCSVファイルストリームを開きます。
-    /// </summary>
-    public void StartLogging()
-    {
-        if (_isLogging) return;
-
-        try
+        /// <summary>
+        /// トラッキング幾何指標を登録
+        /// </summary>
+        public void SetTrackingMetrics(float distanceCm, float angleDeg, float offsetMm)
         {
-            // 保存先ディレクトリの決定 (実機: persistentDataPath / エディタ: プロジェクト直下のExports)
+            _headDistanceCm = distanceCm;
+            _headAngleDeg = angleDeg;
+            _trackingOffsetMm = offsetMm;
+        }
+
+        /// <summary>
+        /// 8x8 = 64マスの合法手判定結果 (ulong ビットマスク) を登録し、チャタリングを検知
+        /// </summary>
+        public void SetLegalMovesBitmask(ulong legalMovesBitmask)
+        {
+            if (_hasPrevLegalMoves)
+            {
+                if (legalMovesBitmask != _prevLegalMovesBitmask)
+                {
+                    // 合法手判定が前フレームから変化した瞬間のタイムスタンプをキューに登録
+                    _flickerTimestamps.Enqueue(Time.unscaledTime);
+                }
+            }
+            else
+            {
+                _hasPrevLegalMoves = true;
+            }
+
+            _prevLegalMovesBitmask = legalMovesBitmask;
+        }
+
+        #endregion
+
+        #region Logging Control & File Export
+
+        /// <summary>
+        /// Beam Pro タッチ画面または外部からのロギングトグル
+        /// </summary>
+        public void ToggleLogging()
+        {
+            if (isLogging)
+            {
+                StopLoggingAndSave();
+            }
+            else
+            {
+                StartLogging();
+            }
+        }
+
+        public void StartLogging()
+        {
+            _logBuffer.Clear();
+            _logBuffer.Add(CSV_HEADER);
+            _loggingStartTime = Time.time;
+            _recordedFrameCountInSession = 0;
+            _flickerTimestamps.Clear();
+            _hasPrevLegalMoves = false;
+
+            isLogging = true;
+            UpdateUIState();
+
+            CustomScreenLogger.Log("<color=#FF0055>[PERF] 性能データ測定を開始しました (REC)</color>");
+            Debug.Log("[PerformanceLogger] Performance logging started.");
+        }
+
+        public void StopLoggingAndSave()
+        {
+            if (!isLogging && _logBuffer.Count <= 1) return;
+
+            isLogging = false;
+            UpdateUIState();
+
+            // 保存先ディレクトリの決定 (Android: persistentDataPath, Editor: Exports/)
             string exportDir;
 #if UNITY_EDITOR
-            exportDir = Path.Combine(Directory.GetCurrentDirectory(), exportSubFolder);
+            exportDir = Path.Combine(Directory.GetCurrentDirectory(), "Exports");
+#elif UNITY_ANDROID
+            exportDir = Application.persistentDataPath;
 #else
-            exportDir = Path.Combine(Application.persistentDataPath, exportSubFolder);
+            exportDir = Application.persistentDataPath;
 #endif
 
             if (!Directory.Exists(exportDir))
@@ -253,410 +266,118 @@ public class PerformanceLogger : MonoBehaviour
             }
 
             string timestampStr = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string fileName = $"performance_log_{timestampStr}.csv";
-            _currentLogFilePath = Path.Combine(exportDir, fileName);
+            string filePath = Path.Combine(exportDir, $"performance_log_{timestampStr}.csv");
 
-            // ファイルストリームを生成 (UTF-8 BOM付きでExcel文字化け防止)
-            _fileStream = new FileStream(_currentLogFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
-            _streamWriter = new StreamWriter(_fileStream, new UTF8Encoding(true));
-
-            // CSVヘッダーの即時書き込み
-            _streamWriter.WriteLine(CSV_HEADER);
-            _streamWriter.Flush();
-
-            _rowBuffer.Clear();
-            _pendingFramesCount = 0;
-            _totalRecordedFrames = 0;
-            _flickerTimeQueue.Clear();
-            _hasPreviousLegalMoves = false;
-            _currentFlickerCount1s = 0;
-            _swFrameTotal.Restart();
-
-            _isLogging = true;
-            Debug.Log($"[PerformanceLogger] >>> Real-time Logging STARTED. File: {_currentLogFilePath}");
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[PerformanceLogger] ロギング開始に失敗しました: {ex.Message}\n{ex.StackTrace}");
-            CloseLogFile();
-        }
-    }
-
-    /// <summary>
-    /// ロギングを停止し、ファイルを確定してクローズします。
-    /// </summary>
-    public void StopLogging()
-    {
-        if (!_isLogging) return;
-
-        _isLogging = false;
-        _swFrameTotal.Reset();
-        CloseLogFile();
-
-        Debug.Log($"[PerformanceLogger] <<< Logging STOPPED. Output saved: {_currentLogFilePath} (Total Frames: {_totalRecordedFrames})");
-    }
-
-    /// <summary>
-    /// バッファ内のデータをディスクにフラッシュ（即時書き込み）します。
-    /// </summary>
-    public void FlushBufferToDisk()
-    {
-        if (_streamWriter != null && _rowBuffer.Length > 0)
-        {
             try
             {
-                _streamWriter.Write(_rowBuffer.ToString());
-                _streamWriter.Flush();
-                _rowBuffer.Clear();
-                _pendingFramesCount = 0;
+                File.WriteAllLines(filePath, _logBuffer, Encoding.UTF8);
+                string msg = $"<color=#00FF88>[PERF] CSVエクスポート完了 ({_recordedFrameCountInSession} frames):</color>\n{filePath}";
+                CustomScreenLogger.Log(msg);
+                Debug.Log($"[PerformanceLogger] Successfully exported CSV to: {filePath}");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[PerformanceLogger] ファイルフラッシュ中にエラー: {ex.Message}");
+                string errMsg = $"[PERF] CSV保存エラー: {ex.Message}";
+                CustomScreenLogger.LogError(errMsg);
+                Debug.LogError($"[PerformanceLogger] Failed to save CSV: {ex.Message}");
             }
         }
-    }
 
-    private void CloseLogFile()
-    {
-        try
+        private void RecordCurrentFrame()
         {
-            FlushBufferToDisk();
+            _recordedFrameCountInSession++;
 
-            if (_streamWriter != null)
+            // 1. Timestamp (ISO 8601 UTC)
+            string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+
+            // 2. FrameCount
+            int frameCount = Time.frameCount;
+
+            // 3. CurrentFPS
+            float fps = _currentFps;
+
+            // 4..8. Latencies (ms)
+            float latTotal = _latencyTotalMs;
+            float latCap = _latencyCaptureMs;
+            float latRec = _latencyRecognitionMs;
+            float latAlg = _latencyAlgorithmMs;
+            float latRen = _latencyRenderMs;
+
+            // 9..11. Tracking Metrics
+            float distCm = _headDistanceCm;
+            float angleDeg = _headAngleDeg;
+            float offsetMm = _trackingOffsetMm;
+
+            // 12. Move_Flicker_Count_1s
+            int flickerCount = _flickerTimestamps.Count;
+
+            // 13. Algorithm_Accuracy_Flag (目視確認用の手動入力欄のため常に空文字 "")
+            string accuracyFlag = "";
+
+            // CSV 1行の生成 (文化依存の小数点を防ぐため InvariantCulture)
+            string csvLine = string.Format(CultureInfo.InvariantCulture,
+                "{0},{1},{2:F1},{3:F2},{4:F2},{5:F2},{6:F2},{7:F2},{8:F1},{9:F1},{10:F1},{11},{12}",
+                timestamp, frameCount, fps, latTotal, latCap, latRec, latAlg, latRen,
+                distCm, angleDeg, offsetMm, flickerCount, accuracyFlag);
+
+            _logBuffer.Add(csvLine);
+        }
+
+        #endregion
+
+        #region UI Binding & Updates
+
+        public void BindUIControls()
+        {
+            if (logToggleButton == null)
             {
-                _streamWriter.Dispose();
-                _streamWriter = null;
+                logToggleButton = GameObject.Find("Btn_Toggle_PerfLog")?.GetComponent<Button>();
             }
 
-            if (_fileStream != null)
+            if (logToggleButton != null)
             {
-                _fileStream.Dispose();
-                _fileStream = null;
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[PerformanceLogger] ファイルクローズ中にエラー: {ex.Message}");
-        }
-    }
-
-    #endregion
-
-    #region Spatial Metrics (Distance, Angle, Offset)
-
-    private void CalculateSpatialMetrics(out float distanceCm, out float angleDeg, out float offsetMm)
-    {
-        distanceCm = 0f;
-        angleDeg = 0f;
-        offsetMm = 0f;
-
-        // ARカメラが未設定なら再検索
-        if (arCamera == null && Camera.main != null)
-        {
-            arCamera = Camera.main.transform;
-        }
-
-        // 1. ARカメラと盤面オブジェクトの直線距離 (cm) & 盤面法線に対する見下ろし角度 (deg)
-        if (arCamera != null && boardTransform != null)
-        {
-            Vector3 camPos = arCamera.position;
-            Vector3 boardPos = boardTransform.position;
-
-            // 直線距離 (m -> cm)
-            distanceCm = Vector3.Distance(camPos, boardPos) * 100f;
-
-            // 盤面中心からカメラへの視線方向ベクトル
-            Vector3 toCam = (camPos - boardPos).normalized;
-
-            // 盤面の天面法線 (boardTransform.up) とのなす角 (真上=0度、真横=90度)
-            angleDeg = Vector3.Angle(boardTransform.up, toCam);
-        }
-
-        // 2. 物理マーカーと仮想ハイライト中心のズレ幅 (mm)
-        if (_manualTrackingOffsetMm.HasValue)
-        {
-            offsetMm = _manualTrackingOffsetMm.Value;
-        }
-        else if (physicalMarkerTransform != null && virtualHighlightTransform != null)
-        {
-            offsetMm = Vector3.Distance(physicalMarkerTransform.position, virtualHighlightTransform.position) * 1000f;
-        }
-    }
-
-    /// <summary>
-    /// 外部スクリプトからトラッキング誤差 (mm) を直接設定します。
-    /// </summary>
-    public void SetTrackingOffset(float offsetMm)
-    {
-        _manualTrackingOffsetMm = offsetMm;
-    }
-
-    /// <summary>
-    /// 物理マーカー位置と仮想ハイライト位置からトラッキング誤差 (mm) を直接設定します。
-    /// </summary>
-    public void SetTrackingPositions(Vector3 physicalMarkerWorldPos, Vector3 virtualHighlightWorldPos)
-    {
-        _manualTrackingOffsetMm = Vector3.Distance(physicalMarkerWorldPos, virtualHighlightWorldPos) * 1000f;
-    }
-
-    #endregion
-
-    #region Chattering / Flicker Detection Logic
-
-    /// <summary>
-    /// 64マスの合法手ビット列 (ulong) を更新し、直近1秒間の反転・変化回数 (チャタリング) を計算します。
-    /// </summary>
-    public void UpdateLegalMoves(ulong currentLegalMovesMask)
-    {
-        float now = Time.unscaledTime;
-
-        if (_hasPreviousLegalMoves)
-        {
-            if (currentLegalMovesMask != _previousLegalMovesMask)
-            {
-                _flickerTimeQueue.Enqueue(now);
-                _previousLegalMovesMask = currentLegalMovesMask;
-            }
-        }
-        else
-        {
-            _previousLegalMovesMask = currentLegalMovesMask;
-            _hasPreviousLegalMoves = true;
-        }
-
-        CleanExpiredFlickers(now);
-    }
-
-    /// <summary>
-    /// 64要素のbool配列から合法手を更新します。
-    /// </summary>
-    public void UpdateLegalMoves(bool[] legalMoves64)
-    {
-        if (legalMoves64 == null) return;
-        ulong mask = 0UL;
-        int count = Math.Min(64, legalMoves64.Length);
-        for (int i = 0; i < count; i++)
-        {
-            if (legalMoves64[i])
-            {
-                mask |= (1UL << i);
-            }
-        }
-        UpdateLegalMoves(mask);
-    }
-
-    /// <summary>
-    /// 8x8のbool配列から合法手を更新します。
-    /// </summary>
-    public void UpdateLegalMoves(bool[,] legalMoves8x8)
-    {
-        if (legalMoves8x8 == null) return;
-        ulong mask = 0UL;
-        for (int y = 0; y < 8; y++)
-        {
-            for (int x = 0; x < 8; x++)
-            {
-                if (legalMoves8x8[y, x])
+                if (logButtonText == null)
                 {
-                    int index = y * 8 + x;
-                    mask |= (1UL << index);
+                    logButtonText = logToggleButton.GetComponentInChildren<Text>();
+                }
+
+                logToggleButton.onClick.RemoveAllListeners();
+                logToggleButton.onClick.AddListener(ToggleLogging);
+            }
+        }
+
+        private void UpdateUIState()
+        {
+            if (logButtonText != null)
+            {
+                logButtonText.text = isLogging ? "REC [STOP & SAVE]" : "LOG: START";
+            }
+
+            if (logToggleButton != null)
+            {
+                var img = logToggleButton.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = isLogging
+                        ? new Color(0.9f, 0.1f, 0.2f, 0.95f) // 記録中: 鮮やかな赤
+                        : new Color(0.15f, 0.45f, 0.85f, 0.95f); // 待機中: ブルー
                 }
             }
         }
-        UpdateLegalMoves(mask);
-    }
 
-    /// <summary>
-    /// Vector2Intの合法手座標リスト (x: 0~7, y: 0~7) から合法手を更新します。
-    /// </summary>
-    public void UpdateLegalMoves(IEnumerable<Vector2Int> playablePositions)
-    {
-        if (playablePositions == null) return;
-        ulong mask = 0UL;
-        foreach (var pos in playablePositions)
+        private void UpdateRecordingUI()
         {
-            if (pos.x >= 0 && pos.x < 8 && pos.y >= 0 && pos.y < 8)
+            if (logButtonText != null)
             {
-                int index = pos.y * 8 + pos.x;
-                mask |= (1UL << index);
+                float elapsed = Time.time - _loggingStartTime;
+                int minutes = (int)(elapsed / 60f);
+                int seconds = (int)(elapsed % 60f);
+                bool blink = ((int)(elapsed * 2f) % 2) == 0;
+                string dot = blink ? "● " : "○ ";
+                logButtonText.text = $"{dot}REC {minutes:D2}:{seconds:D2} [STOP]";
             }
         }
-        UpdateLegalMoves(mask);
+
+        #endregion
     }
-
-    private void CleanExpiredFlickers(float now)
-    {
-        while (_flickerTimeQueue.Count > 0 && (now - _flickerTimeQueue.Peek() > 1.0f))
-        {
-            _flickerTimeQueue.Dequeue();
-        }
-        _currentFlickerCount1s = _flickerTimeQueue.Count;
-    }
-
-    #endregion
-
-    #region Latency Measurement API (Stopwatch / Scope)
-
-    public void RecordLatencyCapture(double ms) => _currentLatencyCapture = ms;
-    public void RecordLatencyRecognition(double ms) => _currentLatencyRecognition = ms;
-    public void RecordLatencyAlgorithm(double ms) => _currentLatencyAlgorithm = ms;
-    public void RecordLatencyRender(double ms) => _currentLatencyRender = ms;
-
-    public void BeginCapture() => _swCapture.Restart();
-    public void EndCapture()
-    {
-        _swCapture.Stop();
-        _currentLatencyCapture = _swCapture.Elapsed.TotalMilliseconds;
-    }
-
-    public void BeginRecognition() => _swRecognition.Restart();
-    public void EndRecognition()
-    {
-        _swRecognition.Stop();
-        _currentLatencyRecognition = _swRecognition.Elapsed.TotalMilliseconds;
-    }
-
-    public void BeginAlgorithm() => _swAlgorithm.Restart();
-    public void EndAlgorithm()
-    {
-        _swAlgorithm.Stop();
-        _currentLatencyAlgorithm = _swAlgorithm.Elapsed.TotalMilliseconds;
-    }
-
-    public void BeginRender() => _swRender.Restart();
-    public void EndRender()
-    {
-        _swRender.Stop();
-        _currentLatencyRender = _swRender.Elapsed.TotalMilliseconds;
-    }
-
-    /// <summary>
-    /// using ステートメントで各処理ブロックを高精度計測するための計測スコープ構造体
-    /// </summary>
-    public readonly struct MeasureScope : IDisposable
-    {
-        private readonly Stopwatch _sw;
-        private readonly Action<double> _onComplete;
-
-        public MeasureScope(Stopwatch sw, Action<double> onComplete)
-        {
-            _sw = sw;
-            _onComplete = onComplete;
-            _sw.Restart();
-        }
-
-        public void Dispose()
-        {
-            _sw.Stop();
-            _onComplete?.Invoke(_sw.Elapsed.TotalMilliseconds);
-        }
-    }
-
-    public MeasureScope MeasureCapture() => new MeasureScope(_swCapture, ms => _currentLatencyCapture = ms);
-    public MeasureScope MeasureRecognition() => new MeasureScope(_swRecognition, ms => _currentLatencyRecognition = ms);
-    public MeasureScope MeasureAlgorithm() => new MeasureScope(_swAlgorithm, ms => _currentLatencyAlgorithm = ms);
-    public MeasureScope MeasureRender() => new MeasureScope(_swRender, ms => _currentLatencyRender = ms);
-
-    #endregion
-
-    #region FPS Calculation
-
-    private void UpdateFpsCalculation()
-    {
-        float now = Time.unscaledTime;
-        _fpsTimeQueue.Enqueue(now);
-
-        while (_fpsTimeQueue.Count > 0 && (now - _fpsTimeQueue.Peek() > 1.0f))
-        {
-            _fpsTimeQueue.Dequeue();
-        }
-    }
-
-    public float CalculateCurrentFps()
-    {
-        if (_fpsTimeQueue.Count <= 1)
-        {
-            return Time.unscaledDeltaTime > 0f ? (1f / Time.unscaledDeltaTime) : 0f;
-        }
-
-        float timeSpan = Time.unscaledTime - _fpsTimeQueue.Peek();
-        if (timeSpan <= 0.0001f)
-        {
-            return _fpsTimeQueue.Count;
-        }
-
-        return (_fpsTimeQueue.Count - 1) / timeSpan;
-    }
-
-    #endregion
-
-    #region Mobile / Android Lifecycle Handlers
-
-    private void OnApplicationPause(bool pauseStatus)
-    {
-        // Android実機: ホーム画面移行やスリープ時に即座にディスクへ書き出す
-        if (pauseStatus)
-        {
-            Debug.Log("[PerformanceLogger] Application Paused. Flushing buffer to CSV...");
-            FlushBufferToDisk();
-        }
-    }
-
-    private void OnApplicationQuit()
-    {
-        Debug.Log("[PerformanceLogger] Application Quitting. Closing CSV file...");
-        CloseLogFile();
-    }
-
-    private void OnDestroy()
-    {
-        CloseLogFile();
-
-        if (Instance == this)
-        {
-            Instance = null;
-        }
-    }
-
-    #endregion
-
-    #region On-Screen AR HUD (Hands-Free Indicator)
-
-    private void OnGUI()
-    {
-        if (!showOnScreenHUD) return;
-
-        // グラス視界の邪魔にならないよう画面左上にコンパクトに表示
-        GUILayout.BeginArea(new Rect(20, 20, 300, 110), GUI.skin.box);
-        
-        bool blink = ((int)(Time.unscaledTime * 2f) % 2 == 0);
-
-        if (_isLogging)
-        {
-            GUI.color = blink ? Color.red : new Color(1f, 0.4f, 0.4f);
-            GUILayout.Label($"<b>● REC [AUTO LOGGING]</b> ({_totalRecordedFrames} frames)");
-        }
-        else
-        {
-            GUI.color = Color.gray;
-            GUILayout.Label("○ LOGGING IDLE");
-        }
-
-        GUI.color = Color.white;
-        GUILayout.Label($"FPS: {CalculateCurrentFps():F1} | Latency: {_currentLatencyTotal:F1}ms");
-        GUILayout.Label($"Flicker: {_currentFlickerCount1s}/s | Dist: {GetDisplayDistance()}cm");
-        GUILayout.EndArea();
-    }
-
-    private string GetDisplayDistance()
-    {
-        if (arCamera != null && boardTransform != null)
-        {
-            return (Vector3.Distance(arCamera.position, boardTransform.position) * 100f).ToString("F0");
-        }
-        return "--";
-    }
-
-    #endregion
 }

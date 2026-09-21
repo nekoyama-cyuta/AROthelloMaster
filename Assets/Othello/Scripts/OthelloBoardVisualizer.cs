@@ -22,11 +22,13 @@ namespace AROthello
 
         [Header("Materials (Inspector アサイン または Assets/Materials/ から自動解決)")]
         [SerializeField] private Material customBoardMaterial;
+        [SerializeField] private Material customBoardInnerMaterial;
         [SerializeField] private Material customWhiteDiscMaterial;
         [SerializeField] private Material customBlackDiscMaterial;
         [SerializeField] private Material customHighlightMaterial;
 
         public Material CustomBoardMaterial { get => customBoardMaterial; set => customBoardMaterial = value; }
+        public Material CustomBoardInnerMaterial { get => customBoardInnerMaterial; set => customBoardInnerMaterial = value; }
         public Material CustomWhiteDiscMaterial { get => customWhiteDiscMaterial; set => customWhiteDiscMaterial = value; }
         public Material CustomBlackDiscMaterial { get => customBlackDiscMaterial; set => customBlackDiscMaterial = value; }
         public Material CustomHighlightMaterial { get => customHighlightMaterial; set => customHighlightMaterial = value; }
@@ -74,6 +76,9 @@ namespace AROthello
         }
 
         public string CalibrationStatusText { get; set; } = "";
+        public float LastAlgorithmLatencyMs { get; private set; } = 0f;
+        public float LastRenderLatencyMs { get; private set; } = 0f;
+        public ulong LastLegalMovesBitmask { get; private set; } = 0UL;
 
         private void Awake()
         {
@@ -148,13 +153,15 @@ namespace AROthello
                 bool isOuter = (i == 0 || i == 8);
                 float thick = isOuter ? edgeThick : innerThick;
 
+                Material lineMat = isOuter ? customBoardMaterial : (customBoardInnerMaterial != null ? customBoardInnerMaterial : customBoardMaterial);
+
                 // X方向グリッド線 (varying Z)
                 GameObject hLine = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 hLine.name = $"GridLine_Top_H_{i}";
                 hLine.transform.SetParent(_gridContainer, false);
                 hLine.transform.localPosition = new Vector3(0f, topY, coord);
                 hLine.transform.localScale = new Vector3(1.0f, thick, thick);
-                ApplyMaterialAndRemoveCollider(hLine, customBoardMaterial);
+                ApplyMaterialAndRemoveCollider(hLine, lineMat);
 
                 // Z方向グリッド線 (varying X)
                 GameObject vLine = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -162,7 +169,7 @@ namespace AROthello
                 vLine.transform.SetParent(_gridContainer, false);
                 vLine.transform.localPosition = new Vector3(coord, topY, 0f);
                 vLine.transform.localScale = new Vector3(thick, thick, 1.0f);
-                ApplyMaterialAndRemoveCollider(vLine, customBoardMaterial);
+                ApplyMaterialAndRemoveCollider(vLine, lineMat);
             }
 
             // --- 底面外枠 4エッジ (Y = -0.502f) ---
@@ -281,7 +288,13 @@ namespace AROthello
         {
             if (customBoardMaterial == null)
             {
-                customBoardMaterial = CreateUnlitMaterial("Mat_Wireframe_Board", new Color(0.1f, 1.0f, 0.45f, 0.95f));
+                // 外周枠: 鮮やかなエメラルドグリーンで外郭をクッキリ強調
+                customBoardMaterial = CreateUnlitMaterial("Mat_Wireframe_Board_Outer", new Color(0.1f, 1.0f, 0.45f, 0.95f));
+            }
+            if (customBoardInnerMaterial == null)
+            {
+                // 内部グリッド線: 落ち着いた暗めのグリーンで実物オセロ盤面を見やすく
+                customBoardInnerMaterial = CreateUnlitMaterial("Mat_Wireframe_Board_Inner", new Color(0.04f, 0.42f, 0.18f, 0.70f));
             }
             if (customWhiteDiscMaterial == null)
             {
@@ -371,7 +384,8 @@ namespace AROthello
                 }
             }
 
-            // 2. OthelloLogic による対象チーム (白石 = 1) の合法手算出
+            // 2. OthelloLogic による対象チーム (白石 = 1) の合法手算出 (Stopwatch 計測)
+            var swAlg = System.Diagnostics.Stopwatch.StartNew();
             List<Vector2Int> legalMoves = null;
             var logic = OthelloLogic.Instance != null ? OthelloLogic.Instance : FindFirstObjectByType<OthelloLogic>();
             if (logic != null)
@@ -386,18 +400,33 @@ namespace AROthello
                 }
             }
 
-            // 合法手の高速ルックアップ用 HashSet
+            ulong legalBitmask = 0UL;
             HashSet<int> legalMoveSet = new HashSet<int>();
             if (legalMoves != null)
             {
                 for (int i = 0; i < legalMoves.Count; i++)
                 {
-                    // key = r * 8 + c (x=c, z=r)
-                    legalMoveSet.Add(legalMoves[i].y * 8 + legalMoves[i].x);
+                    int r = legalMoves[i].y;
+                    int c = legalMoves[i].x;
+                    int idx = r * 8 + c;
+                    legalMoveSet.Add(idx);
+                    if (idx >= 0 && idx < 64)
+                    {
+                        legalBitmask |= (1UL << idx);
+                    }
                 }
             }
+            swAlg.Stop();
+            LastAlgorithmLatencyMs = (float)swAlg.Elapsed.TotalMilliseconds;
+            LastLegalMovesBitmask = legalBitmask;
 
-            // 3. 3D 石・ハイライトの表示切り替え
+            if (PerformanceLogger.Instance != null)
+            {
+                PerformanceLogger.Instance.SetLegalMovesBitmask(legalBitmask);
+            }
+
+            // 3. 3D 石・ハイライトの表示切り替え & 手元ミニ盤面描画 (Stopwatch 計測)
+            var swRen = System.Diagnostics.Stopwatch.StartNew();
             for (int r = 0; r < 8; r++)
             {
                 for (int c = 0; c < 8; c++)
@@ -415,6 +444,8 @@ namespace AROthello
 
             // 4. 手元 2D ミニ盤面テクスチャの描画更新
             UpdateMiniBoardTexture(detectedBoard, legalMoveSet);
+            swRen.Stop();
+            LastRenderLatencyMs = (float)swRen.Elapsed.TotalMilliseconds;
 
             // 5. 手元ステータステキスト更新
             if (miniBoardStatusText != null)

@@ -517,7 +517,7 @@ namespace AROthelloEditor
 
                 RectTransform logPanelRect = handheldLogPanel.GetComponent<RectTransform>();
                 logPanelRect.anchorMin = new Vector2(0.02f, 0.02f);
-                logPanelRect.anchorMax = new Vector2(0.66f, 0.40f);
+                logPanelRect.anchorMax = new Vector2(0.35f, 0.40f);
                 logPanelRect.offsetMin = Vector2.zero;
                 logPanelRect.offsetMax = Vector2.zero;
 
@@ -525,11 +525,11 @@ namespace AROthelloEditor
                 textGo.transform.SetParent(handheldLogPanel.transform, false);
                 handheldLogText = textGo.AddComponent<Text>();
                 handheldLogText.font = defaultFont;
-                handheldLogText.fontSize = 18;
+                handheldLogText.fontSize = 17;
                 handheldLogText.color = Color.white;
                 handheldLogText.alignment = TextAnchor.LowerLeft;
                 handheldLogText.supportRichText = true;
-                handheldLogText.text = "<color=#00FF88>[Beam Pro] Console Initialized with 3D Overhead Monitor.</color>";
+                handheldLogText.text = "<color=#00FF88>[Beam Pro] Console Initialized.</color>";
 
                 RectTransform textRect = textGo.GetComponent<RectTransform>();
                 textRect.anchorMin = new Vector2(0.02f, 0.02f);
@@ -541,9 +541,105 @@ namespace AROthelloEditor
             {
                 RectTransform logPanelRect = handheldLogPanel.GetComponent<RectTransform>();
                 logPanelRect.anchorMin = new Vector2(0.02f, 0.02f);
-                logPanelRect.anchorMax = new Vector2(0.66f, 0.40f);
+                logPanelRect.anchorMax = new Vector2(0.35f, 0.40f);
                 handheldLogText = handheldLogPanel.GetComponentInChildren<Text>();
             }
+
+            // =========================================================================
+            // 手元用 位置位相補正パネル (画面下半分・中央: Offset Panel Handheld - ±2cm)
+            // =========================================================================
+            GameObject handheldOffsetPanel = GameObject.Find("Offset_Panel_Handheld");
+            if (handheldOffsetPanel != null)
+            {
+                UnityEngine.Object.DestroyImmediate(handheldOffsetPanel);
+            }
+
+            handheldOffsetPanel = new GameObject("Offset_Panel_Handheld");
+            handheldOffsetPanel.transform.SetParent(canvasHandheldGo.transform, false);
+
+            Image offsetBg = handheldOffsetPanel.AddComponent<Image>();
+            offsetBg.color = new Color(0.05f, 0.08f, 0.13f, 0.95f);
+
+            RectTransform offsetPanelRect = handheldOffsetPanel.GetComponent<RectTransform>();
+            offsetPanelRect.anchorMin = new Vector2(0.37f, 0.02f);
+            offsetPanelRect.anchorMax = new Vector2(0.69f, 0.40f);
+            offsetPanelRect.offsetMin = Vector2.zero;
+            offsetPanelRect.offsetMax = Vector2.zero;
+
+            // 1. タイトル Text (最上部左側) ＆ クイック補正ボタン (最上部右側)
+            GameObject offTitleGo = new GameObject("Text_Offset_Title");
+            offTitleGo.transform.SetParent(handheldOffsetPanel.transform, false);
+            Text offTitleText = offTitleGo.AddComponent<Text>();
+            offTitleText.font = defaultFont;
+            offTitleText.text = "位置微調整: [水平視線系(高さ固定)]";
+            offTitleText.fontSize = 13;
+            offTitleText.fontStyle = FontStyle.Bold;
+            offTitleText.alignment = TextAnchor.MiddleLeft;
+            offTitleText.color = new Color(0.9f, 0.95f, 1f);
+            RectTransform offTitleRect = offTitleGo.GetComponent<RectTransform>();
+            offTitleRect.anchorMin = new Vector2(0.03f, 0.85f);
+            offTitleRect.anchorMax = new Vector2(0.68f, 0.99f);
+            offTitleRect.offsetMin = Vector2.zero;
+            offTitleRect.offsetMax = Vector2.zero;
+
+            CreateCustomButton(handheldOffsetPanel, "Btn_Offset_Quick3cm", "手前-3cm", new Vector2(0.70f, 0.85f), new Vector2(0.98f, 0.99f), defaultFont, new Color(0.95f, 0.65f, 0.08f, 0.95f));
+
+            // 2. モード切り替えタブ ＆ 0cmリセットボタン
+            CreateCustomButton(handheldOffsetPanel, "Btn_OffsetMode_Horiz", "水平視線", new Vector2(0.02f, 0.68f), new Vector2(0.28f, 0.83f), defaultFont, new Color(0f, 0.65f, 0.85f, 0.95f));
+            CreateCustomButton(handheldOffsetPanel, "Btn_OffsetMode_Board", "盤面基準", new Vector2(0.30f, 0.68f), new Vector2(0.55f, 0.83f), defaultFont, new Color(0.2f, 0.22f, 0.26f, 0.95f));
+            CreateCustomButton(handheldOffsetPanel, "Btn_OffsetMode_World", "絶対座標", new Vector2(0.57f, 0.68f), new Vector2(0.78f, 0.83f), defaultFont, new Color(0.2f, 0.22f, 0.26f, 0.95f));
+            CreateCustomButton(handheldOffsetPanel, "Btn_Offset_Reset", "0cm", new Vector2(0.80f, 0.68f), new Vector2(0.98f, 0.83f), defaultFont, new Color(0.45f, 0.15f, 0.15f, 0.95f));
+
+            // 3. X軸 ラベル ＆ スライダー (±6.0cm)
+            GameObject lblXGo = new GameObject("Text_Offset_X");
+            lblXGo.transform.SetParent(handheldOffsetPanel.transform, false);
+            Text lblX = lblXGo.AddComponent<Text>();
+            lblX.font = defaultFont;
+            lblX.text = "X(視線 左右): +0.0cm";
+            lblX.fontSize = 13;
+            lblX.fontStyle = FontStyle.Bold;
+            lblX.alignment = TextAnchor.MiddleLeft;
+            lblX.color = new Color(0f, 0.85f, 1f);
+            RectTransform lblXRect = lblXGo.GetComponent<RectTransform>();
+            lblXRect.anchorMin = new Vector2(0.04f, 0.54f);
+            lblXRect.anchorMax = new Vector2(0.96f, 0.66f);
+            lblXRect.offsetMin = Vector2.zero;
+            lblXRect.offsetMax = Vector2.zero;
+            CreateStandardSlider(handheldOffsetPanel, "Slider_Offset_X", new Vector2(0.04f, 0.44f), new Vector2(0.96f, 0.54f), -6.0f, 6.0f, 0.0f, new Color(0f, 0.85f, 1f, 0.95f));
+
+            // 4. Y軸 ラベル ＆ スライダー (±6.0cm)
+            GameObject lblYGo = new GameObject("Text_Offset_Y");
+            lblYGo.transform.SetParent(handheldOffsetPanel.transform, false);
+            Text lblY = lblYGo.AddComponent<Text>();
+            lblY.font = defaultFont;
+            lblY.text = "Y(垂直 高さ): +0.0cm";
+            lblY.fontSize = 13;
+            lblY.fontStyle = FontStyle.Bold;
+            lblY.alignment = TextAnchor.MiddleLeft;
+            lblY.color = new Color(0.2f, 0.95f, 0.5f);
+            RectTransform lblYRect = lblYGo.GetComponent<RectTransform>();
+            lblYRect.anchorMin = new Vector2(0.04f, 0.32f);
+            lblYRect.anchorMax = new Vector2(0.96f, 0.44f);
+            lblYRect.offsetMin = Vector2.zero;
+            lblYRect.offsetMax = Vector2.zero;
+            CreateStandardSlider(handheldOffsetPanel, "Slider_Offset_Y", new Vector2(0.04f, 0.22f), new Vector2(0.96f, 0.32f), -6.0f, 6.0f, 0.0f, new Color(0.2f, 0.95f, 0.5f, 0.95f));
+
+            // 5. Z軸 ラベル ＆ スライダー (±6.0cm)
+            GameObject lblZGo = new GameObject("Text_Offset_Z");
+            lblZGo.transform.SetParent(handheldOffsetPanel.transform, false);
+            Text lblZ = lblZGo.AddComponent<Text>();
+            lblZ.font = defaultFont;
+            lblZ.text = "Z(水平 奥/前): -3.0cm";
+            lblZ.fontSize = 13;
+            lblZ.fontStyle = FontStyle.Bold;
+            lblZ.alignment = TextAnchor.MiddleLeft;
+            lblZ.color = new Color(1.0f, 0.70f, 0.15f);
+            RectTransform lblZRect = lblZGo.GetComponent<RectTransform>();
+            lblZRect.anchorMin = new Vector2(0.04f, 0.10f);
+            lblZRect.anchorMax = new Vector2(0.96f, 0.22f);
+            lblZRect.offsetMin = Vector2.zero;
+            lblZRect.offsetMax = Vector2.zero;
+            CreateStandardSlider(handheldOffsetPanel, "Slider_Offset_Z", new Vector2(0.04f, 0.00f), new Vector2(0.96f, 0.10f), -6.0f, 6.0f, 0.0f, new Color(1.0f, 0.70f, 0.15f, 0.95f));
 
             // 手元用 2D ミニ盤面パネル (画面下半分・右端: MiniBoard 2D Debug)
             GameObject handheldMiniBoardPanel = GameObject.Find("MiniBoard_Panel_Handheld");
@@ -558,7 +654,7 @@ namespace AROthelloEditor
                 mbBg.color = new Color(0.04f, 0.06f, 0.09f, 0.95f);
 
                 RectTransform mbPanelRect = handheldMiniBoardPanel.GetComponent<RectTransform>();
-                mbPanelRect.anchorMin = new Vector2(0.68f, 0.02f);
+                mbPanelRect.anchorMin = new Vector2(0.71f, 0.02f);
                 mbPanelRect.anchorMax = new Vector2(0.98f, 0.40f);
                 mbPanelRect.offsetMin = Vector2.zero;
                 mbPanelRect.offsetMax = Vector2.zero;
@@ -618,7 +714,7 @@ namespace AROthelloEditor
             else
             {
                 RectTransform mbPanelRect = handheldMiniBoardPanel.GetComponent<RectTransform>();
-                mbPanelRect.anchorMin = new Vector2(0.68f, 0.02f);
+                mbPanelRect.anchorMin = new Vector2(0.71f, 0.02f);
                 mbPanelRect.anchorMax = new Vector2(0.98f, 0.40f);
                 miniBoardRawImage = handheldMiniBoardPanel.transform.Find("RawImage_MiniBoard")?.GetComponent<RawImage>();
                 miniBoardStatusText = handheldMiniBoardPanel.transform.Find("Text_MiniBoardStatus")?.GetComponent<Text>();
@@ -656,13 +752,15 @@ namespace AROthelloEditor
                 UnityEngine.Object.DestroyImmediate(actionBarGo.transform.GetChild(b).gameObject);
             }
 
-            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_YPos", "Y-Pos: INV", new Vector2(0.01f, 0.1f), new Vector2(0.19f, 0.9f), defaultFont, true);
-            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotX", "Rot-X: INV", new Vector2(0.21f, 0.1f), new Vector2(0.39f, 0.9f), defaultFont, true);
-            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotZ", "Rot-Z: INV", new Vector2(0.41f, 0.1f), new Vector2(0.59f, 0.9f), defaultFont, true);
-            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotY", "Rot-Y: NORM", new Vector2(0.61f, 0.1f), new Vector2(0.79f, 0.9f), defaultFont, false);
-            CreateCustomButton(actionBarGo, "Btn_Recalibrate", "再設定", new Vector2(0.81f, 0.1f), new Vector2(0.99f, 0.9f), defaultFont, new Color(0.95f, 0.52f, 0.08f, 0.95f));
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_YPos", "Y-Pos: INV", new Vector2(0.01f, 0.1f), new Vector2(0.16f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotX", "Rot-X: INV", new Vector2(0.17f, 0.1f), new Vector2(0.32f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotZ", "Rot-Z: INV", new Vector2(0.33f, 0.1f), new Vector2(0.48f, 0.9f), defaultFont, true);
+            CreateAxisToggleButton(actionBarGo, "Btn_Toggle_RotY", "Rot-Y: NORM", new Vector2(0.49f, 0.1f), new Vector2(0.64f, 0.9f), defaultFont, false);
+            CreateCustomButton(actionBarGo, "Btn_Recalibrate", "再設定", new Vector2(0.65f, 0.1f), new Vector2(0.80f, 0.9f), defaultFont, new Color(0.95f, 0.52f, 0.08f, 0.95f));
+            CreateCustomButton(actionBarGo, "Btn_Toggle_PerfLog", "LOG: START", new Vector2(0.81f, 0.1f), new Vector2(0.99f, 0.9f), defaultFont, new Color(0.15f, 0.45f, 0.85f, 0.95f));
 
             tracker.BindAxisToggleButtons();
+            tracker.BindOffsetControls();
 
             // 10. AutoTracker & Logger への参照バインド
             tracker.PreviewRawImage = glassesRawImage;
@@ -672,6 +770,15 @@ namespace AROthelloEditor
 
             screenLogger.LogTextComponent = glassesLogText;
             screenLogger.HandheldLogTextComponent = handheldLogText;
+
+            // 11. PerformanceLogger のセットアップ
+            PerformanceLogger perfLogger = tracker.gameObject.GetComponent<PerformanceLogger>();
+            if (perfLogger == null)
+            {
+                perfLogger = tracker.gameObject.AddComponent<PerformanceLogger>();
+            }
+            perfLogger.BindUIControls();
+            EditorUtility.SetDirty(perfLogger);
 
             // 変更をマーク & シーン保存
             EditorUtility.SetDirty(tracker);
@@ -818,7 +925,11 @@ namespace AROthelloEditor
             tm.characterSize = 0.015f;
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
-            tm.color = new Color(0f, 0.95f, 1f, 1f);
+            visualizerGo.layer = layer;
+            foreach (Transform t in visualizerGo.GetComponentsInChildren<Transform>(true))
+            {
+                t.gameObject.layer = layer;
+            }
 
             return visualizerGo;
         }
@@ -866,8 +977,8 @@ namespace AROthelloEditor
             }
             cam.targetTexture = rt;
 
-            // 基準グリッドの生成
-            SetupReferenceGrid();
+            // 基準グリッドの生成 (GlassesVisualizer レイヤーに設定し、俯瞰カメラからのみ描画)
+            SetupReferenceGrid(glassesLayer);
 
             return cam;
         }
@@ -875,7 +986,7 @@ namespace AROthelloEditor
         /// <summary>
         /// 俯瞰カメラから空間スケールと移動量を即座に把握できる基準床・テーブルグリッド
         /// </summary>
-        private static void SetupReferenceGrid()
+        private static void SetupReferenceGrid(int glassesLayer)
         {
             GameObject gridRoot = GameObject.Find("Overhead_Reference_Grid");
             if (gridRoot == null)
@@ -883,6 +994,7 @@ namespace AROthelloEditor
                 gridRoot = new GameObject("Overhead_Reference_Grid");
                 Undo.RegisterCreatedObjectUndo(gridRoot, "Create Overhead_Reference_Grid");
             }
+            gridRoot.layer = glassesLayer;
 
             // 床面グリッド (Y = 0)
             Material gridMat = GetOrCreateTransparentMaterial("Assets/Materials/AR_GridFloor.mat", new Color(0.15f, 0.25f, 0.35f, 0.35f));
@@ -898,8 +1010,13 @@ namespace AROthelloEditor
                 plane.transform.SetParent(gridRoot.transform, false);
                 plane.transform.position = new Vector3(0f, -0.005f, 0.5f);
                 plane.transform.localScale = new Vector3(1.5f, 0.01f, 1.5f);
+                plane.layer = glassesLayer;
                 if (gridMat != null) plane.GetComponent<Renderer>().sharedMaterial = gridMat;
                 UnityEngine.Object.DestroyImmediate(plane.GetComponent<Collider>());
+            }
+            else
+            {
+                floorPlane.gameObject.layer = glassesLayer;
             }
 
             // 原点 X 軸 (赤ライン、長さ 1m)
@@ -912,8 +1029,13 @@ namespace AROthelloEditor
                 ax.transform.position = new Vector3(0.5f, 0.005f, 0f);
                 ax.transform.localScale = new Vector3(0.01f, 0.5f, 0.01f);
                 ax.transform.rotation = Quaternion.Euler(0f, 0f, -90f);
+                ax.layer = glassesLayer;
                 if (originRed != null) ax.GetComponent<Renderer>().sharedMaterial = originRed;
                 UnityEngine.Object.DestroyImmediate(ax.GetComponent<Collider>());
+            }
+            else
+            {
+                axisX.gameObject.layer = glassesLayer;
             }
 
             // 原点 Z 軸 (青ライン、長さ 1m)
@@ -926,8 +1048,18 @@ namespace AROthelloEditor
                 az.transform.position = new Vector3(0f, 0.005f, 0.5f);
                 az.transform.localScale = new Vector3(0.01f, 0.5f, 0.01f);
                 az.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                az.layer = glassesLayer;
                 if (originBlue != null) az.GetComponent<Renderer>().sharedMaterial = originBlue;
                 UnityEngine.Object.DestroyImmediate(az.GetComponent<Collider>());
+            }
+            else
+            {
+                axisZ.gameObject.layer = glassesLayer;
+            }
+
+            foreach (Transform child in gridRoot.transform)
+            {
+                child.gameObject.layer = glassesLayer;
             }
         }
 
@@ -1089,6 +1221,87 @@ namespace AROthelloEditor
             textRect.anchorMax = Vector2.one;
             textRect.offsetMin = Vector2.zero;
             textRect.offsetMax = Vector2.zero;
+        }
+
+        private static Slider CreateStandardSlider(
+            GameObject parent,
+            string sliderName,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            float minVal,
+            float maxVal,
+            float defaultVal,
+            Color fillColor
+        ) {
+            GameObject sliderGo = new GameObject(sliderName);
+            sliderGo.transform.SetParent(parent.transform, false);
+
+            RectTransform sliderRect = sliderGo.AddComponent<RectTransform>();
+            sliderRect.anchorMin = anchorMin;
+            sliderRect.anchorMax = anchorMax;
+            sliderRect.offsetMin = Vector2.zero;
+            sliderRect.offsetMax = Vector2.zero;
+
+            Slider slider = sliderGo.AddComponent<Slider>();
+            slider.minValue = minVal;
+            slider.maxValue = maxVal;
+            slider.value = defaultVal;
+            slider.wholeNumbers = false;
+
+            // Background
+            GameObject bgGo = new GameObject("Background");
+            bgGo.transform.SetParent(sliderGo.transform, false);
+            Image bgImg = bgGo.AddComponent<Image>();
+            bgImg.color = new Color(0.12f, 0.15f, 0.20f, 0.95f);
+            RectTransform bgRect = bgGo.GetComponent<RectTransform>();
+            bgRect.anchorMin = new Vector2(0f, 0.25f);
+            bgRect.anchorMax = new Vector2(1f, 0.75f);
+            bgRect.offsetMin = Vector2.zero;
+            bgRect.offsetMax = Vector2.zero;
+
+            // Fill Area
+            GameObject fillAreaGo = new GameObject("Fill Area");
+            fillAreaGo.transform.SetParent(sliderGo.transform, false);
+            RectTransform fillAreaRect = fillAreaGo.AddComponent<RectTransform>();
+            fillAreaRect.anchorMin = new Vector2(0f, 0.25f);
+            fillAreaRect.anchorMax = new Vector2(1f, 0.75f);
+            fillAreaRect.offsetMin = new Vector2(6f, 0f);
+            fillAreaRect.offsetMax = new Vector2(-6f, 0f);
+
+            GameObject fillGo = new GameObject("Fill");
+            fillGo.transform.SetParent(fillAreaGo.transform, false);
+            Image fillImg = fillGo.AddComponent<Image>();
+            fillImg.color = fillColor;
+            RectTransform fillRect = fillGo.GetComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+
+            // Handle Slide Area
+            GameObject handleAreaGo = new GameObject("Handle Slide Area");
+            handleAreaGo.transform.SetParent(sliderGo.transform, false);
+            RectTransform handleAreaRect = handleAreaGo.AddComponent<RectTransform>();
+            handleAreaRect.anchorMin = Vector2.zero;
+            handleAreaRect.anchorMax = Vector2.one;
+            handleAreaRect.offsetMin = new Vector2(8f, 0f);
+            handleAreaRect.offsetMax = new Vector2(-8f, 0f);
+
+            GameObject handleGo = new GameObject("Handle");
+            handleGo.transform.SetParent(handleAreaGo.transform, false);
+            Image handleImg = handleGo.AddComponent<Image>();
+            handleImg.color = Color.white;
+            RectTransform handleRect = handleGo.GetComponent<RectTransform>();
+            handleRect.anchorMin = new Vector2(0f, 0f);
+            handleRect.anchorMax = new Vector2(0f, 1f);
+            handleRect.sizeDelta = new Vector2(16f, 0f);
+
+            slider.fillRect = fillRect;
+            slider.handleRect = handleRect;
+            slider.targetGraphic = handleImg;
+            slider.direction = Slider.Direction.LeftToRight;
+
+            return slider;
         }
     }
 }
