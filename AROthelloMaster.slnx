@@ -1,4 +1,7 @@
 ﻿<Solution>
   <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="Unity.XR.XREAL.csproj" />
+  <Project Path="OpenCV.csproj" />
+  <Project Path="Unity.XR.XREAL.Editor.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
 </Solution>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="nrsdk.loader" >
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="29" />
+
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
+    <queries>
+        <intent>
+            <action android:name="ai.nreal.nrsdk.network.type.server" />
+        </intent>
+    </queries>
+
+    <application>
+        <uses-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+        <uses-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
+        <uses-native-library
+            android:name="libnr_api.xreal.so"
+            android:required="false" />
+    </application>
+
+</manifest>
