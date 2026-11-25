@@ -1,0 +1,264 @@
+{
+  "packId": "sample_pack_v1",
+  "patterns": [
+    {
+      "patternId": "L1-05-A",
+      "difficulty": 1,
+      "stepCount": 5,
+      "initialStones": [],
+      "steps": [
+        {
+          "step": 1,
+          "col": 3,
+          "row": 2,
+          "coord": "D3",
+          "color": "B"
+        },
+        {
+          "step": 2,
+          "col": 2,
+          "row": 3,
+          "coord": "C4",
+          "color": "W"
+        },
+        {
+          "step": 3,
+          "col": 4,
+          "row": 5,
+          "coord": "E6",
+          "color": "B"
+        },
+        {
+          "step": 4,
+          "col": 5,
+          "row": 4,
+          "coord": "F5",
+          "color": "W"
+        },
+        {
+          "step": 5,
+          "col": 2,
+          "row": 2,
+          "coord": "C3",
+          "color": "B"
+        }
+      ]
+    },
+    {
+      "patternId": "L2-10-A",
+      "difficulty": 2,
+      "stepCount": 10,
+      "initialStones": [],
+      "steps": [
+        {
+          "step": 1,
+          "col": 3,
+          "row": 3,
+          "coord": "D4",
+          "color": "W"
+        },
+        {
+          "step": 2,
+          "col": 4,
+          "row": 4,
+          "coord": "E5",
+          "color": "W"
+        },
+        {
+          "step": 3,
+          "col": 3,
+          "row": 4,
+          "coord": "D5",
+          "color": "B"
+        },
+        {
+          "step": 4,
+          "col": 4,
+          "row": 3,
+          "coord": "E4",
+          "color": "B"
+        },
+        {
+          "step": 5,
+          "col": 2,
+          "row": 4,
+          "coord": "C5",
+          "color": "B"
+        },
+        {
+          "step": 6,
+          "col": 5,
+          "row": 3,
+          "coord": "F4",
+          "color": "W"
+        },
+        {
+          "step": 7,
+          "col": 5,
+          "row": 5,
+          "coord": "F6",
+          "color": "B"
+        },
+        {
+          "step": 8,
+          "col": 2,
+          "row": 2,
+          "coord": "C3",
+          "color": "W"
+        },
+        {
+          "step": 9,
+          "col": 6,
+          "row": 4,
+          "coord": "G5",
+          "color": "B"
+        },
+        {
+          "step": 10,
+          "col": 1,
+          "row": 3,
+          "coord": "B4",
+          "color": "W"
+        }
+      ]
+    },
+    {
+      "patternId": "L3-15-A",
+      "difficulty": 3,
+      "stepCount": 15,
+      "initialStones": [
+        {
+          "col": 0,
+          "row": 0,
+          "coord": "A1",
+          "color": "B"
+        },
+        {
+          "col": 7,
+          "row": 0,
+          "coord": "H1",
+          "color": "W"
+        },
+        {
+          "col": 0,
+          "row": 7,
+          "coord": "A8",
+          "color": "W"
+        },
+        {
+          "col": 7,
+          "row": 7,
+          "coord": "H8",
+          "color": "B"
+        }
+      ],
+      "steps": [
+        {
+          "step": 1,
+          "col": 3,
+          "row": 3,
+          "coord": "D4",
+          "color": "W"
+        },
+        {
+          "step": 2,
+          "col": 4,
+          "row": 4,
+          "coord": "E5",
+          "color": "W"
+        },
+        {
+          "step": 3,
+          "col": 3,
+          "row": 4,
+          "coord": "D5",
+          "color": "B"
+        },
+        {
+          "step": 4,
+          "col": 4,
+          "row": 3,
+          "coord": "E4",
+          "color": "B"
+        },
+        {
+          "step": 5,
+          "col": 2,
+          "row": 3,
+          "coord": "C4",
+          "color": "B"
+        },
+        {
+          "step": 6,
+          "col": 5,
+          "row": 4,
+          "coord": "F5",
+          "color": "W"
+        },
+        {
+          "step": 7,
+          "col": 4,
+          "row": 2,
+          "coord": "E3",
+          "color": "W"
+        },
+        {
+          "step": 8,
+          "col": 3,
+          "row": 5,
+          "coord": "D6",
+          "color": "B"
+        },
+        {
+          "step": 9,
+          "col": 2,
+          "row": 2,
+          "coord": "C3",
+          "color": "W"
+        },
+        {
+          "step": 10,
+          "col": 5,
+          "row": 5,
+          "coord": "F6",
+          "color": "B"
+        },
+        {
+          "step": 11,
+          "col": 6,
+          "row": 3,
+          "coord": "G4",
+          "color": "W"
+        },
+        {
+          "step": 12,
+          "col": 1,
+          "row": 4,
+          "coord": "B5",
+          "color": "B"
+        },
+        {
+          "step": 13,
+          "col": 4,
+          "row": 6,
+          "coord": "E7",
+          "color": "W"
+        },
+        {
+          "step": 14,
+          "col": 3,
+          "row": 1,
+          "coord": "D2",
+          "color": "B"
+        },
+        {
+          "step": 15,
+          "col": 6,
+          "row": 6,
+          "coord": "G7",
+          "color": "W"
+        }
+      ]
+    }
+  ]
+}
