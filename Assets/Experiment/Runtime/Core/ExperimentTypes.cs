@@ -81,6 +81,8 @@ namespace AROthello.Experiment
         public List<PlacementErrorType> ErrorTypes = new List<PlacementErrorType>();
         /// <summary>実験者の手動操作で進めた場合 true (Phase 5)</summary>
         public bool IsOverride;
+        /// <summary>この手順に付ける備考 (手動操作の理由など)。CSV の note 列に出る。</summary>
+        public string Note = "";
     }
 
     /// <summary>試行 1 回分の結果。</summary>
