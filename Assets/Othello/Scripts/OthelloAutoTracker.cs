@@ -188,6 +188,12 @@ namespace AROthello
         private int _fpsFrameCount = 0;
         private float _currentFps = 0f;
 
+        /// <summary>
+        /// 盤面を認識したフレームごとに通知する (実験システムなど外部モジュール用)。
+        /// 引数は [行, 列] の認識結果。呼び出し後に内容が書き換わるため、保持する側でコピーすること。
+        /// </summary>
+        public event Action<DiscColor[,]> BoardRecognized;
+
         public bool IsTracking => _isTracking;
         public Transform TargetBoardTransform
         {
@@ -917,6 +923,7 @@ namespace AROthello
                     {
                         UpdatePoseFromCorners(procW, procH, _corners);
                     }
+                    BoardRecognized?.Invoke(_boardState);
                 }
 
                 swTotal.Stop();
@@ -1113,6 +1120,7 @@ namespace AROthello
                 {
                     UpdatePoseFromCorners(imgW, imgH, _corners);
                 }
+                BoardRecognized?.Invoke(_boardState);
             }
 
             swTotal.Stop();
