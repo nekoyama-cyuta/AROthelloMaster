@@ -2293,6 +2293,7 @@ RectTransform:
   m_Children:
   - {fileID: 1942884640}
   - {fileID: 2080773943}
+  - {fileID: 1211861177}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -3087,6 +3088,208 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 594577466}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &694272795
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 694272805}
+  - component: {fileID: 694272804}
+  - component: {fileID: 694272803}
+  - component: {fileID: 694272802}
+  - component: {fileID: 694272801}
+  - component: {fileID: 694272800}
+  - component: {fileID: 694272799}
+  - component: {fileID: 694272798}
+  - component: {fileID: 694272797}
+  - component: {fileID: 694272796}
+  m_Layer: 0
+  m_Name: Experiment_System
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &694272796
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a76a176db48440198ec72b288772138, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.ExperimentOperatorPanel
+  controller: {fileID: 694272801}
+  logger: {fileID: 694272800}
+  calibrationDots: {fileID: 694272798}
+  offsetAdjuster: {fileID: 694272797}
+  mockProvider: {fileID: 694272802}
+  targetCanvas: {fileID: 736569372}
+  startOpen: 0
+  enableKeyboard: 1
+  nudgeStepCm: 0.5
+  autoIncrementOrder: 0
+  resetConfirmSeconds: 2.5
+--- !u!114 &694272797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f4a96c3c84a46dea18adc63b7d08bf4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AROthello.OthelloTrackerOffsetAdjuster
+  tracker: {fileID: 1060968441}
+--- !u!114 &694272798
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ac5dd4ac9934a4695b6d67260d7eb74, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.CalibrationDotsView
+  boardRoot: {fileID: 594577468}
+  dotMaterial: {fileID: 2100000, guid: 719803f5765f48d497d310edbee182d1, type: 2}
+  dotColor: {r: 1, g: 0.2, b: 0.9, a: 0.9}
+  dotRadius: 0.012
+  heightAboveTop: 0.05
+  visibleOnStart: 0
+--- !u!114 &694272799
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3b8670f654a439f8821c4de332f8378, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.ExperimentGuideView
+  controller: {fileID: 694272801}
+  boardRoot: {fileID: 594577468}
+  progressText: {fileID: 1211861178}
+  markerMaterial: {fileID: 2100000, guid: 719803f5765f48d497d310edbee182d1, type: 2}
+  targetStyle: 0
+  blackStoneColor: {r: 0, g: 0.85, b: 1, a: 0.6}
+  whiteStoneColor: {r: 1, g: 1, b: 1, a: 0.6}
+  errorColor: {r: 1, g: 0.15, b: 0.15, a: 0.85}
+  ringOuterRatio: 0.36
+  ringWidthRatio: 0.04
+  dotRadiusRatio: 0.06
+  ghostRadiusRatio: 0.34
+  errorRingWidthRatio: 0.07
+  heightAboveTop: 0.05
+  errorBlinkHz: 3
+  boardChildrenToHide:
+  - Highlights_Container
+--- !u!114 &694272800
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7aed3ca0757b48c7919a5ffc4650e784, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.ExperimentLogger
+  controller: {fileID: 694272801}
+  metadata:
+    subjectId: 
+    condition: 
+    order: 1
+    note: 
+  outputFolder: ExperimentLogs
+--- !u!114 &694272801
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 50e0ba51546045c5a6c79d1a77131fbe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.ExperimentController
+  instructionLoader: {fileID: 694272804}
+  boardProvider: {fileID: 694272803}
+  editorBoardProvider: {fileID: 694272802}
+  correctDebounceSec: 0.4
+  errorDebounceSec: 0.4
+  checkEmptyBoardWhenNoInitialStones: 1
+--- !u!114 &694272802
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eae58d5c3be94b598e2436f87680e63f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.MockBoardStateProvider
+  publishEveryFrame: 1
+--- !u!114 &694272803
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 561f6286edad48588f3485ca5b0332ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AROthello.OthelloTrackerBoardStateProvider
+  tracker: {fileID: 1060968441}
+--- !u!114 &694272804
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 79e7352b46674be596029f6123f24071, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AROthello.Experiment::AROthello.Experiment.InstructionLoader
+  jsonFiles:
+  - Instructions/sample_pack.json
+  loadOnStart: 1
+  initialPatternId: 
+--- !u!4 &694272805
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &697567749
 GameObject:
   m_ObjectHideFlags: 0
@@ -5354,6 +5557,85 @@ CanvasRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1208329980}
+  m_CullTransparentMesh: 1
+--- !u!1 &1211861176
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1211861177}
+  - component: {fileID: 1211861179}
+  - component: {fileID: 1211861178}
+  m_Layer: 0
+  m_Name: Text_ExperimentProgress
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &1211861177
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1211861176}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 466847291}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.8, y: 0.9}
+  m_AnchorMax: {x: 0.98, y: 0.98}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1211861178
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1211861176}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
+  m_Material: {fileID: 0}
+  m_Color: {r: 0.85, g: 0.9, b: 1, a: 0.75}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FontData:
+    m_Font: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+    m_FontSize: 28
+    m_FontStyle: 0
+    m_BestFit: 0
+    m_MinSize: 10
+    m_MaxSize: 40
+    m_Alignment: 2
+    m_AlignByGeometry: 0
+    m_RichText: 1
+    m_HorizontalOverflow: 0
+    m_VerticalOverflow: 0
+    m_LineSpacing: 1
+  m_Text: 
+--- !u!222 &1211861179
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1211861176}
   m_CullTransparentMesh: 1
 --- !u!1 &1216452526
 GameObject:
@@ -8102,3 +8384,4 @@ SceneRoots:
   - {fileID: 1060968442}
   - {fileID: 466847291}
   - {fileID: 736569373}
+  - {fileID: 694272805}
