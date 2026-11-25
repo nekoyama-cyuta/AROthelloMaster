@@ -109,6 +109,7 @@ namespace AROthello.Experiment
             _sm.TrialStarted += OnTrialStarted;
             _sm.StepStarted += OnStepStarted;
             _sm.StepCompleted += OnStepCompleted;
+            _sm.StepReverted += OnStepReverted;
             _sm.TrialCompleted += OnTrialCompleted;
         }
 
@@ -117,6 +118,7 @@ namespace AROthello.Experiment
             _sm.TrialStarted -= OnTrialStarted;
             _sm.StepStarted -= OnStepStarted;
             _sm.StepCompleted -= OnStepCompleted;
+            _sm.StepReverted -= OnStepReverted;
             _sm.TrialCompleted -= OnTrialCompleted;
         }
 
@@ -145,6 +147,11 @@ namespace AROthello.Experiment
         private void OnStepCompleted(StepResult result)
         {
             _stepFpsList.Add(_stepFps.AverageFps);
+        }
+
+        private void OnStepReverted(StepResult undone)
+        {
+            if (_stepFpsList.Count > 0) _stepFpsList.RemoveAt(_stepFpsList.Count - 1);
         }
 
         private void OnTrialCompleted(TrialResult trial)

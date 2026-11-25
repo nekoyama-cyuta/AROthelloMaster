@@ -38,6 +38,8 @@ namespace AROthello.Experiment
         public const string NoError = "none";
         /// <summary>1 手順で複数の誤りがあったときの区切り</summary>
         public const string ErrorSeparator = "|";
+        /// <summary>開始前チェックを省略した試行のサマリー note</summary>
+        public const string InitialCheckOverriddenNote = "initial check overridden";
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -131,7 +133,7 @@ namespace AROthello.Experiment
                 FormatNumber(avgFps),
                 startedAt.ToString("yyyy-MM-ddTHH:mm:ss", Inv),
                 completedAt.ToString("yyyy-MM-ddTHH:mm:ss", Inv),
-                Escape(meta.note)
+                Escape(JoinNotes(meta.note, trial != null && trial.InitialCheckOverridden ? InitialCheckOverriddenNote : null))
             };
             return string.Join(",", fields);
         }

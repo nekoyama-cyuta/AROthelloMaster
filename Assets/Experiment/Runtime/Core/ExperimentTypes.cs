@@ -96,6 +96,8 @@ namespace AROthello.Experiment
         /// <summary>総作業時間 (TCT) = EndTime − StartTime</summary>
         public double TotalTimeSec;
         public int TotalErrorCount;
+        /// <summary>開始前チェックを実験者が省略して開始した場合 true</summary>
+        public bool InitialCheckOverridden;
         public List<StepResult> Steps = new List<StepResult>();
     }
 }

@@ -17,6 +17,9 @@ namespace AROthello.Experiment
         [Tooltip("IBoardStateProvider を実装したコンポーネント (未設定ならシーンから探す)")]
         [SerializeField] private MonoBehaviour boardProvider;
 
+        [Tooltip("Unity エディタ上で実行したときに代わりに使う供給元 (モック盤面など)。未設定なら boardProvider を使う")]
+        [SerializeField] private MonoBehaviour editorBoardProvider;
+
         [Header("Judgement")]
         [Tooltip("正解状態をこの秒数続けて検知したら手順を確定する")]
         [SerializeField, Min(0f)] private float correctDebounceSec = 0.4f;
@@ -45,7 +48,9 @@ namespace AROthello.Experiment
 
         private void OnEnable()
         {
-            _provider = boardProvider as IBoardStateProvider;
+            _provider = Application.isEditor && editorBoardProvider is IBoardStateProvider editorProvider
+                ? editorProvider
+                : boardProvider as IBoardStateProvider;
             if (_provider == null)
             {
                 foreach (MonoBehaviour mb in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))

@@ -43,6 +43,9 @@ namespace AROthello.Experiment
         private double? _pendingErrorSince;
         private PlacementError _activeError;
 
+        private bool _initialCheckOverridden;
+        private string _currentStepNote = "";
+
         private bool? _lastInitialOk;
         private int _lastInitialMismatchCount = -1;
         private List<CellMismatch> _lastInitialMismatches = new List<CellMismatch>();
@@ -77,6 +80,10 @@ namespace AROthello.Experiment
         /// <summary>確定していた誤りが解消された (手順インデックス)。</summary>
         public event Action<int> ErrorCleared;
         public event Action<TrialResult> TrialCompleted;
+        /// <summary>StepBack で取り消された手順の結果。</summary>
+        public event Action<StepResult> StepReverted;
+        /// <summary>試行中 (Calibration 以降) に ResetTrial された。</summary>
+        public event Action TrialReset;
 
         // ---------------- 状態 ----------------
 
@@ -152,9 +159,77 @@ namespace AROthello.Experiment
         /// <summary>試行を破棄して Idle に戻る (パターンは保持)。</summary>
         public void ResetTrial()
         {
+            bool wasActive = _state != ExperimentState.Idle;
             ClearProgress();
             SetState(ExperimentState.Idle);
+            if (wasActive) TrialReset?.Invoke();
         }
+
+        // ---------------- 手動オーバーライド (実験者用の非常口) ----------------
+
+        /// <summary>
+        /// 認識が詰まったときなどに、実験者が強制的に先へ進める。
+        /// - Running: 現在の手順を「置けた」ものとして確定する (IsOverride = true)。
+        ///   正解候補を検知中ならその時刻を、そうでなければ time を T_first_detect とする。
+        /// - InitialBoardCheck: 開始前チェックを省略して試行を始める (TrialResult.InitialCheckOverridden = true)。
+        /// - Calibration: キャリブレーションを終える (CompleteCalibration と同じ)。
+        /// </summary>
+        public bool ForceAdvance(double time, string note = DefaultOverrideNote)
+        {
+            switch (_state)
+            {
+                case ExperimentState.Calibration:
+                    return CompleteCalibration(time);
+
+                case ExperimentState.InitialBoardCheck:
+                    _initialCheckOverridden = true;
+                    StartRunning(time);
+                    return true;
+
+                case ExperimentState.Running:
+                    double firstDetect = _pendingCorrectSince ?? time;
+                    if (_activeError != null)
+                    {
+                        _activeError = null;
+                        ErrorCleared?.Invoke(_stepIndex);
+                    }
+                    ConfirmStep(firstDetect, time, true, note);
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 直前に確定した手順を取り消し、その手順からやり直す (Running 中、2 手目以降のみ)。
+        /// 取り消した手順の誤りは、やり直す手順に引き継ぐ。所要時間はさらに 1 つ前の手順の T_first_detect から測り直す。
+        /// </summary>
+        public bool StepBack(double time)
+        {
+            if (_state != ExperimentState.Running || _results.Count == 0) return false;
+
+            StepResult undone = _results[_results.Count - 1];
+            _results.RemoveAt(_results.Count - 1);
+            _stepIndex = undone.StepIndex;
+
+            InstructionStep step = _pattern.steps[_stepIndex];
+            _expectedBoard.Set(step.col, step.row, _initialBoard.Get(step.col, step.row));
+            _lastFirstDetectTime = _results.Count > 0 ? _results[_results.Count - 1].FirstDetectTime : _trialStartTime;
+            _guideShownTime = time;
+
+            ResetStepTracking();
+            _currentStepErrorCount = undone.ErrorCount;
+            _currentStepErrorTypes.AddRange(undone.ErrorTypes);
+            _currentStepNote = ExperimentCsv.JoinNotes(undone.Note, StepBackNote);
+
+            StepReverted?.Invoke(undone);
+            StepStarted?.Invoke(_stepIndex, step);
+            return true;
+        }
+
+        public const string DefaultOverrideNote = "manual override";
+        public const string StepBackNote = "redo after step back";
 
         /// <summary>認識した盤面を 1 フレーム分処理する。time は秒 (単調増加)。</summary>
         public void ProcessBoard(BoardState board, double time)
@@ -235,7 +310,7 @@ namespace AROthello.Experiment
                 if (!_pendingCorrectSince.HasValue) _pendingCorrectSince = time;
                 if (time - _pendingCorrectSince.Value >= CorrectDebounceSec - TimeEpsilon)
                 {
-                    ConfirmStep(_pendingCorrectSince.Value, time, false);
+                    ConfirmStep(_pendingCorrectSince.Value, time, false, null);
                 }
                 return;
             }
@@ -272,7 +347,7 @@ namespace AROthello.Experiment
         }
 
         /// <summary>現在の手順を確定して次へ進む。</summary>
-        private void ConfirmStep(double firstDetectTime, double confirmTime, bool isOverride)
+        private void ConfirmStep(double firstDetectTime, double confirmTime, bool isOverride, string overrideNote)
         {
             InstructionStep step = _pattern.steps[_stepIndex];
             BoardCoord.TryParseColor(step.color, out StoneColor color);
@@ -287,7 +362,8 @@ namespace AROthello.Experiment
                 StepTimeSec = firstDetectTime - _lastFirstDetectTime,
                 ErrorCount = _currentStepErrorCount,
                 ErrorTypes = new List<PlacementErrorType>(_currentStepErrorTypes),
-                IsOverride = isOverride
+                IsOverride = isOverride,
+                Note = ExperimentCsv.JoinNotes(_currentStepNote, isOverride ? overrideNote : null)
             };
 
             _results.Add(result);
@@ -308,6 +384,7 @@ namespace AROthello.Experiment
                     EndTime = firstDetectTime,
                     TotalTimeSec = firstDetectTime - _trialStartTime,
                     TotalErrorCount = _totalErrorCount,
+                    InitialCheckOverridden = _initialCheckOverridden,
                     Steps = new List<StepResult>(_results)
                 };
                 SetState(ExperimentState.Completed);
@@ -374,6 +451,7 @@ namespace AROthello.Experiment
             _activeError = null;
             _currentStepErrorCount = 0;
             _currentStepErrorTypes.Clear();
+            _currentStepNote = "";
         }
 
         private void ResetInitialCheckStatus()
@@ -393,6 +471,7 @@ namespace AROthello.Experiment
             _trialStartTime = 0;
             _lastFirstDetectTime = 0;
             _guideShownTime = 0;
+            _initialCheckOverridden = false;
             ResetStepTracking();
             ResetInitialCheckStatus();
         }

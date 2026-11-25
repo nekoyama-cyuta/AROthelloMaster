@@ -36,6 +36,9 @@ public static class CreateOthelloAutoTrackerScene
         // 4. Run standard setup to create XR Origin, Target, Tracker, Canvas, Logger, and Preview
         OthelloARDebugSetup.SetupScene();
 
+        // 4b. 被験者実験システム (指示書・判定・ガイド・ログ・実験者パネル) を追加
+        ExperimentSceneSetup.AddToActiveScene();
+
         // 5. Save Scene
         EditorSceneManager.SaveScene(scene, SCENE_PATH);
         Debug.Log($"<color=#00FF88>SUCCESS: Generated and saved Othello Auto Tracker Scene at: {SCENE_PATH}</color>");
