@@ -1,7 +1,9 @@
 {
     "name": "AROthello.Experiment",
     "rootNamespace": "AROthello.Experiment",
-    "references": [],
+    "references": [
+        "UnityEngine.UI"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
