@@ -266,7 +266,7 @@
       "url": "https://packages.unity.com"
     },
     "com.xreal.xr": {
-      "version": "file:C:/Users/nezum/Downloads/com.xreal.xr/package",
+      "version": "file:../com.xreal.xr/package",
       "depth": 0,
       "source": "local",
       "dependencies": {

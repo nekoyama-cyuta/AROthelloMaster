@@ -13,7 +13,7 @@
     "com.unity.visualscripting": "1.9.11",
     "com.unity.xr.arfoundation": "6.3.5",
     "com.unity.xr.interaction.toolkit": "3.3.2",
-    "com.xreal.xr": "file:C:/Users/nezum/Downloads/com.xreal.xr/package",
+    "com.xreal.xr": "file:../com.xreal.xr/package",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
