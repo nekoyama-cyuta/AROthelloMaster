@@ -1,0 +1,43 @@
+{
+  "patternId": "L1-05-S",
+  "difficulty": 1,
+  "stepCount": 5,
+  "initialStones": [],
+  "steps": [
+    {
+      "step": 1,
+      "col": 3,
+      "row": 2,
+      "coord": "D3",
+      "color": "B"
+    },
+    {
+      "step": 2,
+      "col": 2,
+      "row": 3,
+      "coord": "C4",
+      "color": "W"
+    },
+    {
+      "step": 3,
+      "col": 4,
+      "row": 5,
+      "coord": "E6",
+      "color": "B"
+    },
+    {
+      "step": 4,
+      "col": 5,
+      "row": 4,
+      "coord": "F5",
+      "color": "W"
+    },
+    {
+      "step": 5,
+      "col": 2,
+      "row": 2,
+      "coord": "C3",
+      "color": "B"
+    }
+  ]
+}
