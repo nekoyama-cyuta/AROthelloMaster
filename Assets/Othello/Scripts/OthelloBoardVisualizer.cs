@@ -16,6 +16,9 @@ namespace AROthello
         [Tooltip("合法手を計算・表示する対象チーム (1 = 白石, -1 = 黒石)")]
         [SerializeField] private int targetTeam = 1;
 
+        [Tooltip("合法手の計算と表示 (AR の黄色ハイライト・ミニ盤面・ステータス) を行うか。被験者実験では ExperimentDisplayProfile が無効にする")]
+        [SerializeField] private bool showLegalMoves = true;
+
         [Header("Handheld Debug UI (Beam Pro 画面端用)")]
         [SerializeField] private RawImage miniBoardRawImage;
         [SerializeField] private Text miniBoardStatusText;
@@ -73,6 +76,17 @@ namespace AROthello
         {
             get => targetTeam;
             set => targetTeam = value;
+        }
+
+        /// <summary>false にすると合法手を計算せず、AR ハイライト・ミニ盤面の黄色表示・ステータスの Legal 表記をすべて消す</summary>
+        public bool ShowLegalMoves
+        {
+            get => showLegalMoves;
+            set
+            {
+                showLegalMoves = value;
+                if (!showLegalMoves) HideAllHighlights();
+            }
         }
 
         public string CalibrationStatusText { get; set; } = "";
@@ -387,7 +401,7 @@ namespace AROthello
             // 2. OthelloLogic による対象チーム (白石 = 1) の合法手算出 (Stopwatch 計測)
             var swAlg = System.Diagnostics.Stopwatch.StartNew();
             List<Vector2Int> legalMoves = null;
-            var logic = OthelloLogic.Instance != null ? OthelloLogic.Instance : FindFirstObjectByType<OthelloLogic>();
+            var logic = !showLegalMoves ? null : (OthelloLogic.Instance != null ? OthelloLogic.Instance : FindFirstObjectByType<OthelloLogic>());
             if (logic != null)
             {
                 try
@@ -453,7 +467,19 @@ namespace AROthello
                 string teamName = (targetTeam == 1) ? "<color=#FFFFFF>WHITE</color>" : "<color=#00D4FF>BLACK</color>";
                 int moveCount = (legalMoves != null) ? legalMoves.Count : 0;
                 string calibPart = string.IsNullOrEmpty(CalibrationStatusText) ? "" : $"\n<size=12><color=#A0E0FF>{CalibrationStatusText}</color></size>";
-                miniBoardStatusText.text = $"<color=#00D4FF>B:{blackCount}</color> <color=#FFFFFF>W:{whiteCount}</color> | Legal ({teamName}): <color=#FFE600>{moveCount}</color>{calibPart}";
+                string legalPart = showLegalMoves ? $" | Legal ({teamName}): <color=#FFE600>{moveCount}</color>" : "";
+                miniBoardStatusText.text = $"<color=#00D4FF>B:{blackCount}</color> <color=#FFFFFF>W:{whiteCount}</color>{legalPart}{calibPart}";
+            }
+        }
+
+        private void HideAllHighlights()
+        {
+            for (int r = 0; r < 8; r++)
+            {
+                for (int c = 0; c < 8; c++)
+                {
+                    if (_highlights[r, c] != null && _highlights[r, c].activeSelf) _highlights[r, c].SetActive(false);
+                }
             }
         }
 

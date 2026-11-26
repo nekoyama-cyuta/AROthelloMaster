@@ -15,6 +15,9 @@ public static class ExperimentSceneSetup
     public const string RootName = "Experiment_System";
     public const string ProgressTextName = "Text_ExperimentProgress";
 
+    /// <summary>被験者の視界に入るが実験には不要なグラス側 UI (カメラプレビュー・ログ)</summary>
+    public static readonly string[] GlassesObjectsToHide = { "Preview_Panel_Glasses", "Log_Panel_Glasses" };
+
     [MenuItem("XREAL/Add Experiment System To Scene")]
     public static void AddFromMenu()
     {
@@ -54,6 +57,7 @@ public static class ExperimentSceneSetup
         CalibrationDotsView dots = GetOrAdd<CalibrationDotsView>(root);
         OthelloTrackerOffsetAdjuster adjuster = GetOrAdd<OthelloTrackerOffsetAdjuster>(root);
         ExperimentOperatorPanel panel = GetOrAdd<ExperimentOperatorPanel>(root);
+        ExperimentDisplayProfile displayProfile = GetOrAdd<ExperimentDisplayProfile>(root);
 
         var material = Resources.Load<Material>(ExperimentGuideView.DefaultMaterialResource);
         Text progressText = glassesCanvas != null ? GetOrCreateProgressText(glassesCanvas.transform) : null;
@@ -77,6 +81,10 @@ public static class ExperimentSceneSetup
         Set(panel, "mockProvider", mock);
         Set(panel, "targetCanvas", handheldCanvas != null ? handheldCanvas.GetComponent<Canvas>() : null);
 
+        // 被験者の視界 (グラス) から実験に不要な既存デバッグ表示を外す
+        Set(displayProfile, "boardVisualizer", board.GetComponent<OthelloBoardVisualizer>());
+        SetObjects(displayProfile, "hiddenObjects", FindChildren(glassesCanvas, GlassesObjectsToHide));
+
         return true;
     }
 
@@ -97,6 +105,32 @@ public static class ExperimentSceneSetup
         }
         p.objectReferenceValue = value;
         so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void SetObjects(Object target, string field, GameObject[] values)
+    {
+        var so = new SerializedObject(target);
+        SerializedProperty p = so.FindProperty(field);
+        if (p == null || !p.isArray)
+        {
+            Debug.LogError($"[ExperimentSceneSetup] {target.GetType().Name}.{field} not found");
+            return;
+        }
+        p.arraySize = values.Length;
+        for (int i = 0; i < values.Length; i++) p.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static GameObject[] FindChildren(GameObject parent, string[] names)
+    {
+        var list = new System.Collections.Generic.List<GameObject>();
+        if (parent == null) return list.ToArray();
+        foreach (string n in names)
+        {
+            Transform t = parent.transform.Find(n);
+            if (t != null) list.Add(t.gameObject);
+        }
+        return list.ToArray();
     }
 
     /// <summary>グラス側 HUD の右上に小さな進捗表示を置く。</summary>
