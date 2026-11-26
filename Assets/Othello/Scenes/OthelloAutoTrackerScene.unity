@@ -3008,6 +3008,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AROthello.OthelloBoardVisualizer
   targetTeam: 1
+  showLegalMoves: 1
   miniBoardRawImage: {fileID: 52610673}
   miniBoardStatusText: {fileID: 378441007}
   customBoardMaterial: {fileID: 2100000, guid: 7420066db2ba9d3429aa025a759a36e4, type: 2}
@@ -3106,6 +3107,7 @@ GameObject:
   - component: {fileID: 694272798}
   - component: {fileID: 694272797}
   - component: {fileID: 694272796}
+  - component: {fileID: 694272806}
   m_Layer: 0
   m_Name: Experiment_System
   m_TagString: Untagged
@@ -3290,6 +3292,26 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &694272806
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1990e7c4c2c3401eb3673ee116314c3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AROthello.ExperimentDisplayProfile
+  boardVisualizer: {fileID: 594577467}
+  hideLegalMoves: 1
+  hideDetectedStoneDots: 1
+  hideBoardGrid: 1
+  hideForwardIndicator: 1
+  hiddenObjects:
+  - {fileID: 1942884639}
+  - {fileID: 2080773942}
 --- !u!1 &697567749
 GameObject:
   m_ObjectHideFlags: 0
