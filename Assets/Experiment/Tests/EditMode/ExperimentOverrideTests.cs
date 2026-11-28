@@ -429,32 +429,84 @@ namespace AROthello.Experiment.Tests
             ExperimentOperatorPanel panel = Track(new GameObject("Panel")).AddComponent<ExperimentOperatorPanel>();
             Assert.DoesNotThrow(() => panel.Initialize(op, canvasGo.GetComponent<Canvas>()));
 
-            Assert.IsFalse(panel.IsOpen, "closed by default");
-            panel.Buttons["実験"].onClick.Invoke();
+            Assert.IsFalse(panel.IsOpen, "settings closed by default");
+            panel.Buttons["settings"].onClick.Invoke();
             Assert.IsTrue(panel.IsOpen);
+            panel.Buttons["settings_close"].onClick.Invoke();
+            Assert.IsFalse(panel.IsOpen);
 
-            panel.Buttons["キャリブ開始"].onClick.Invoke();
+            Assert.AreEqual("位置合わせを始める", panel.Labels["primary"].text);
+            panel.Buttons["primary"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Calibration, _sm.State);
-            panel.Buttons["キャリブ開始"].onClick.Invoke(); // ラベルは変わるが同じボタン
+            Assert.AreEqual("位置OK・試行を始める", panel.Labels["primary"].text, "plain label follows the state");
+            panel.Buttons["primary"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.InitialBoardCheck, _sm.State);
+            Assert.AreEqual("確認をとばして始める", panel.Labels["force"].text);
 
-            panel.Buttons["強制で次へ"].onClick.Invoke();
+            panel.Buttons["force"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Running, _sm.State);
-            panel.Buttons["強制で次へ"].onClick.Invoke();
+            panel.Buttons["force"].onClick.Invoke();
             Assert.AreEqual(1, _sm.CurrentStepIndex);
             Assert.IsTrue(_sm.CompletedSteps[0].IsOverride);
-            panel.Buttons["1手戻る"].onClick.Invoke();
+            panel.Buttons["back"].onClick.Invoke();
             Assert.AreEqual(0, _sm.CurrentStepIndex);
 
-            // リセットは 2 回押しで確定
-            panel.Buttons["リセット"].onClick.Invoke();
+            // やり直しは 2 回押しで確定
+            panel.Buttons["reset"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Running, _sm.State, "first press only arms the reset");
-            panel.Buttons["リセット"].onClick.Invoke();
+            Assert.AreEqual("もう一度押すとやり直し", panel.Labels["reset"].text);
+            panel.Buttons["reset"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Idle, _sm.State);
 
-            Assert.DoesNotThrow(() => panel.Buttons["X+"].onClick.Invoke(), "no offset adjuster connected");
-            Assert.DoesNotThrow(() => panel.Buttons["四隅ドット"].onClick.Invoke(), "no dots view connected");
-            Assert.IsNotNull(canvasGo.transform.Find("Experiment_Operator/Panel"));
+            Assert.DoesNotThrow(() => panel.Buttons["nudge_x+"].onClick.Invoke(), "no offset adjuster connected");
+            Assert.DoesNotThrow(() => panel.Buttons["dots"].onClick.Invoke(), "no dots view connected");
+            Assert.DoesNotThrow(() => panel.Buttons["view_overhead"].onClick.Invoke(), "no views connected");
+            Assert.IsFalse(panel.Buttons.ContainsKey("recalibrate"), "tracking settings are hidden without a tracker");
+            Assert.IsNotNull(canvasGo.transform.Find(ExperimentOperatorPanel.RootName + "/Settings"));
+            op.Dispose();
+        }
+
+        private class FakeTrackingSettings : ITrackingSettings
+        {
+            public bool IsTracking { get; set; }
+            public int OffsetBasis { get; private set; }
+            public int TypicalOffsetCount, RecalibrateCount;
+            public readonly bool[] Inverted = new bool[4];
+            public bool IsPerformanceLogging { get; private set; }
+            public void SetOffsetBasis(int basis) => OffsetBasis = basis;
+            public void ApplyTypicalOffset() => TypicalOffsetCount++;
+            public bool IsAxisInverted(TrackingAxis axis) => Inverted[(int)axis];
+            public void SetAxisInverted(TrackingAxis axis, bool inverted) => Inverted[(int)axis] = inverted;
+            public void RecalibrateStoneDetection() => RecalibrateCount++;
+            public void TogglePerformanceLogging() => IsPerformanceLogging = !IsPerformanceLogging;
+        }
+
+        [Test]
+        public void Panel_SettingsButtonsDriveTrackingSettings()
+        {
+            var (op, _, _) = CreateOperator(out _);
+            op.LoadSelectedPattern();
+            var canvasGo = Track(new GameObject("Canvas", typeof(Canvas)));
+            ExperimentOperatorPanel panel = Track(new GameObject("Panel")).AddComponent<ExperimentOperatorPanel>();
+            panel.Initialize(op, canvasGo.GetComponent<Canvas>());
+            var fake = new FakeTrackingSettings();
+            panel.SetTrackingSettings(fake);
+
+            panel.Buttons["basis_1"].onClick.Invoke();
+            Assert.AreEqual(1, fake.OffsetBasis);
+            panel.Buttons["typical_offset"].onClick.Invoke();
+            Assert.AreEqual(1, fake.TypicalOffsetCount);
+            panel.Buttons["axis_1_invert"].onClick.Invoke();
+            Assert.IsTrue(fake.Inverted[(int)TrackingAxis.Pitch]);
+            panel.Buttons["axis_1_normal"].onClick.Invoke();
+            Assert.IsFalse(fake.Inverted[(int)TrackingAxis.Pitch]);
+            panel.Buttons["recalibrate"].onClick.Invoke();
+            Assert.AreEqual(1, fake.RecalibrateCount);
+
+            Assert.AreEqual("動作の記録を始める", panel.Labels["perf_log"].text);
+            panel.Buttons["perf_log"].onClick.Invoke();
+            Assert.IsTrue(fake.IsPerformanceLogging);
+            Assert.AreEqual("記録を止めて保存する", panel.Labels["perf_log"].text);
             op.Dispose();
         }
 

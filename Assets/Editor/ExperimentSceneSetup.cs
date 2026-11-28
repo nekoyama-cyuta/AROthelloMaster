@@ -18,6 +18,13 @@ public static class ExperimentSceneSetup
     /// <summary>被験者の視界に入るが実験には不要なグラス側 UI (カメラプレビュー・ログ)</summary>
     public static readonly string[] GlassesObjectsToHide = { "Preview_Panel_Glasses", "Log_Panel_Glasses" };
 
+    /// <summary>実験者画面 (ExperimentOperatorPanel) に置き換える既存の手元 UI。中の映像・盤・ログは新しい画面へ移して使う</summary>
+    public static readonly string[] HandheldObjectsToReplace =
+    {
+        "Header_Panel_Handheld", "Preview_Panel_Handheld", "Overhead_Panel_Handheld", "ActionBar_Handheld",
+        "Log_Panel_Handheld", "Offset_Panel_Handheld", "MiniBoard_Panel_Handheld"
+    };
+
     [MenuItem("XREAL/Add Experiment System To Scene")]
     public static void AddFromMenu()
     {
@@ -80,6 +87,13 @@ public static class ExperimentSceneSetup
         Set(panel, "offsetAdjuster", adjuster);
         Set(panel, "mockProvider", mock);
         Set(panel, "targetCanvas", handheldCanvas != null ? handheldCanvas.GetComponent<Canvas>() : null);
+        Set(panel, "trackingSettings", adjuster);
+        Set(panel, "cameraView", FindComponent<RawImage>(handheldCanvas, "Preview_Panel_Handheld/RawImage_HandheldPreview"));
+        Set(panel, "overheadView", FindComponent<RawImage>(handheldCanvas, "Overhead_Panel_Handheld/RawImage_OverheadView"));
+        Set(panel, "boardView", FindComponent<RawImage>(handheldCanvas, "MiniBoard_Panel_Handheld/RawImage_MiniBoard"));
+        Set(panel, "boardStatusText", FindComponent<Text>(handheldCanvas, "MiniBoard_Panel_Handheld/Text_MiniBoardStatus"));
+        Set(panel, "logText", FindComponent<Text>(handheldCanvas, "Log_Panel_Handheld/Text_HandheldLog"));
+        SetObjects(panel, "legacyObjects", FindChildren(handheldCanvas, HandheldObjectsToReplace));
 
         // 被験者の視界 (グラス) から実験に不要な既存デバッグ表示を外す
         Set(displayProfile, "boardVisualizer", board.GetComponent<OthelloBoardVisualizer>());
@@ -119,6 +133,13 @@ public static class ExperimentSceneSetup
         p.arraySize = values.Length;
         for (int i = 0; i < values.Length; i++) p.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
         so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static T FindComponent<T>(GameObject parent, string path) where T : Component
+    {
+        if (parent == null) return null;
+        Transform t = parent.transform.Find(path);
+        return t != null ? t.GetComponent<T>() : null;
     }
 
     private static GameObject[] FindChildren(GameObject parent, string[] names)

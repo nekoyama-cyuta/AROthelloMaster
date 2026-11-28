@@ -6,8 +6,9 @@ namespace AROthello
     /// <summary>
     /// 実験者パネルの位置微調整を、既存の OthelloAutoTracker の位置オフセット補正 (±6cm) へ渡すアダプター。
     /// 調整は現在のオフセット座標系 (水平視線 / 盤面 / ワールド) に対して行われ、既存 UI のスライダーと同じ値を共有する。
+    /// あわせて、実験者画面の「設定」(グラスの動きの向き・石の見分け直し・動作の記録) もトラッカーへ橋渡しする。
     /// </summary>
-    public class OthelloTrackerOffsetAdjuster : MonoBehaviour, IBoardOffsetAdjuster
+    public class OthelloTrackerOffsetAdjuster : MonoBehaviour, IBoardOffsetAdjuster, ITrackingSettings
     {
         private const float MaxOffsetCm = 6f;
 
@@ -61,6 +62,59 @@ namespace AROthello
                 case OthelloAutoTracker.OffsetCoordinateMode.BoardLocal: return Tracker.BoardLocalOffset;
                 default: return Tracker.WorldAbsoluteOffset;
             }
+        }
+
+        // ---------------- ITrackingSettings ----------------
+
+        public bool IsTracking => Tracker != null && Tracker.IsTracking;
+
+        public int OffsetBasis => Tracker != null ? (int)Tracker.CurrentOffsetMode : 0;
+
+        public void SetOffsetBasis(int basis)
+        {
+            if (Tracker == null || basis < 0 || basis > 2) return;
+            Tracker.SetOffsetMode((OthelloAutoTracker.OffsetCoordinateMode)basis);
+        }
+
+        public void ApplyTypicalOffset()
+        {
+            if (Tracker != null) Tracker.ApplyQuick3cmOffset();
+        }
+
+        public bool IsAxisInverted(TrackingAxis axis)
+        {
+            if (Tracker == null) return false;
+            switch (axis)
+            {
+                case TrackingAxis.Height: return Tracker.InvertLocalY;
+                case TrackingAxis.Pitch: return Tracker.InvertLocalRotX;
+                case TrackingAxis.Yaw: return Tracker.InvertLocalRotY;
+                default: return Tracker.InvertLocalRotZ;
+            }
+        }
+
+        public void SetAxisInverted(TrackingAxis axis, bool inverted)
+        {
+            if (Tracker == null) return;
+            switch (axis)
+            {
+                case TrackingAxis.Height: Tracker.InvertLocalY = inverted; break;
+                case TrackingAxis.Pitch: Tracker.InvertLocalRotX = inverted; break;
+                case TrackingAxis.Yaw: Tracker.InvertLocalRotY = inverted; break;
+                default: Tracker.InvertLocalRotZ = inverted; break;
+            }
+        }
+
+        public void RecalibrateStoneDetection()
+        {
+            if (Tracker != null) Tracker.RequestRecalibration();
+        }
+
+        public bool IsPerformanceLogging => PerformanceLogger.Instance != null && PerformanceLogger.Instance.IsLogging;
+
+        public void TogglePerformanceLogging()
+        {
+            if (PerformanceLogger.Instance != null) PerformanceLogger.Instance.ToggleLogging();
         }
 
         private void SetOffsetMeters(Vector3 value)

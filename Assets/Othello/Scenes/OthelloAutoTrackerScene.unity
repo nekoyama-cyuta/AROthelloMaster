@@ -3131,13 +3131,28 @@ MonoBehaviour:
   logger: {fileID: 694272800}
   calibrationDots: {fileID: 694272798}
   offsetAdjuster: {fileID: 694272797}
+  trackingSettings: {fileID: 694272797}
   mockProvider: {fileID: 694272802}
   targetCanvas: {fileID: 736569372}
+  cameraView: {fileID: 1400349477}
+  overheadView: {fileID: 1050155237}
+  boardView: {fileID: 52610673}
+  boardStatusText: {fileID: 378441007}
+  logText: {fileID: 201302688}
+  legacyObjects:
+  - {fileID: 1976786197}
+  - {fileID: 769058478}
+  - {fileID: 1208329980}
+  - {fileID: 152718824}
+  - {fileID: 381935619}
+  - {fileID: 1508698370}
+  - {fileID: 925755782}
   startOpen: 0
   enableKeyboard: 1
   nudgeStepCm: 0.5
   autoIncrementOrder: 0
   resetConfirmSeconds: 2.5
+  showMockOnDevice: 0
 --- !u!114 &694272797
 MonoBehaviour:
   m_ObjectHideFlags: 0
