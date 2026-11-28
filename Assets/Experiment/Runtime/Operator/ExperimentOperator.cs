@@ -71,6 +71,9 @@ namespace AROthello.Experiment
         /// <summary>試行ログの書き出し (任意。評価に試行開始時の被験者情報と完了時刻を使う)。</summary>
         public ExperimentLogRecorder Recorder { get; set; }
 
+        /// <summary>グラス画面の録画 (任意)。評価に録画のファイル名を書く。</summary>
+        public ExperimentRecordingController Recording { get; set; }
+
         /// <summary>直後アンケートの定義。質問が無ければ評価のあと直ちに次の試行へ進む。</summary>
         public QuestionnaireDefinition Questionnaire { get; set; } = QuestionnaireDefinition.Default;
 
@@ -436,7 +439,8 @@ namespace AROthello.Experiment
             if (Store != null)
             {
                 TrialLog log = Recorder?.LastLog;
-                bool ok = Store.WriteEvaluation(LastTrialMetadata, _lastTrial, _evaluation, log != null ? log.CompletedAt : _evaluation.EvaluatedAt);
+                string video = Recording != null ? Recording.VideoFileFor(LastTrialMetadata.experimentId) : "";
+                bool ok = Store.WriteEvaluation(LastTrialMetadata, _lastTrial, _evaluation, log != null ? log.CompletedAt : _evaluation.EvaluatedAt, video);
                 LastRecordError = ok ? null : Store.LastError;
             }
             Log($"evaluation recorded: {_evaluation.ResultCode}");

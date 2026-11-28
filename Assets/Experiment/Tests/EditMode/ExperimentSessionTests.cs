@@ -590,6 +590,191 @@ namespace AROthello.Experiment.Tests
             op.Dispose();
         }
 
+        // ---------------- グラス画面の録画 ----------------
+
+        private class FakeRecorder : IGlassesRecorder
+        {
+            public bool IsAvailable { get; set; } = true;
+            public bool IsRecording { get; private set; }
+            public bool FailStart;
+            public RecordingSource? ForceActual;
+            public readonly List<string> Started = new List<string>();
+            public RecordingQuality LastQuality;
+            public int StopCount;
+
+            public void StartRecording(string path, RecordingSource source, RecordingQuality quality, Action<bool, RecordingSource, string> onStarted)
+            {
+                if (FailStart) { onStarted(false, source, "camera busy"); return; }
+                Started.Add(path);
+                LastQuality = quality;
+                File.WriteAllText(path, "fake mp4");
+                IsRecording = true;
+                onStarted(true, ForceActual ?? source, null);
+            }
+
+            public void StopRecording(Action<bool, string> onStopped)
+            {
+                StopCount++;
+                IsRecording = false;
+                onStopped(true, null);
+            }
+        }
+
+        private (ExperimentOperator op, ExperimentLogRecorder rec, double[] now, FakeRecorder cam, ExperimentRecordingController rc) CreateRecordingSession()
+        {
+            var (op, rec, now) = CreateSession();
+            var cam = new FakeRecorder();
+            var rc = new ExperimentRecordingController(_sm, cam, _dir, () => op.Metadata, () => now[0]);
+            op.Recording = rc;
+            return (op, rec, now, cam, rc);
+        }
+
+        [Test]
+        public void Recording_StartsWithTrial_StopsAtCompletion_AndIsNamedInEvaluation()
+        {
+            var (op, rec, now, cam, rc) = CreateRecordingSession();
+            op.LoadSelectedPattern();
+            RunToSetup(op, now);
+            op.AddSubject("山田");
+            Assert.AreEqual(0, cam.Started.Count, "nothing is recorded before the trial");
+
+            op.StartTrial();
+            Assert.AreEqual(RecordingStatus.Recording, rc.Status);
+            Assert.AreEqual(Path.Combine(_dir, "videos", "S01-AR-T01.mp4"), cam.Started.Single());
+            now[0] += 1; op.ForceAdvance();
+            now[0] += 1; op.StepBack();
+            Assert.AreEqual(RecordingStatus.Recording, rc.Status, "step back / force do not stop the recording");
+            Assert.AreEqual(2.0, rc.ElapsedSec, 1e-9);
+            FinishTrial(op, now);
+            Assert.AreEqual(RecordingStatus.Off, rc.Status);
+            Assert.AreEqual(1, cam.StopCount);
+            Assert.AreEqual("S01-AR-T01.mp4", rc.LastResult.FileName);
+            Assert.AreEqual(5.0, rc.LastResult.DurationSec, 1e-9);
+            Assert.IsFalse(rc.LastResult.FellBack);
+            Assert.AreEqual("S01-AR-T01.mp4", rc.VideoFileFor("S01-AR-T01"));
+
+            op.BeginEvaluation();
+            op.SetResult(true);
+            op.RecordEvaluation();
+            List<string[]> eval = ExperimentCsv.Parse(ReadFile(ExperimentRecordStore.EvaluationFileName));
+            Assert.AreEqual("S01-AR-T01.mp4", ExperimentCsv.Field(eval[1], ExperimentCsv.IndexHeader(eval[0]), "video_file"));
+            rc.Dispose();
+            rec.Dispose();
+            op.Dispose();
+        }
+
+        [Test]
+        public void Recording_ResetKeepsPartialVideo_AndFallbackOrFailureIsReported()
+        {
+            var (op, rec, now, cam, rc) = CreateRecordingSession();
+            op.LoadSelectedPattern();
+            RunToSetup(op, now);
+            op.AddSubject("山田");
+            op.StartTrial();
+            now[0] += 3;
+            op.ResetTrial();
+            Assert.AreEqual(RecordingStatus.Off, rc.Status);
+            Assert.IsTrue(rc.LastResult.WasReset);
+            Assert.AreEqual("S01-AR-T01_reset.mp4", rc.LastResult.FileName);
+            Assert.IsTrue(File.Exists(Path.Combine(_dir, "videos", "S01-AR-T01_reset.mp4")));
+            Assert.IsFalse(File.Exists(Path.Combine(_dir, "videos", "S01-AR-T01.mp4")));
+            Assert.AreEqual("", rc.VideoFileFor("S01-AR-T01"), "an aborted trial has no video for its evaluation");
+
+            // 合成を頼んだが AR 表示だけになった
+            cam.ForceActual = RecordingSource.VirtualOnly;
+            rc.Settings.quality = RecordingQuality.High1080;
+            op.StartCalibration(); op.ConfirmCalibration();
+            RunToSetup(op, now);
+            op.StartTrial();
+            Assert.AreEqual(RecordingQuality.High1080, cam.LastQuality);
+            Assert.AreEqual(Path.Combine(_dir, "videos", "S01-AR-T01.mp4"), cam.Started.Last(), "the reset file does not block the name");
+            FinishTrial(op, now);
+            Assert.IsTrue(rc.LastResult.FellBack);
+            Assert.AreEqual(RecordingSource.VirtualOnly, rc.LastResult.Actual);
+
+            // 録画を始められない
+            cam.FailStart = true;
+            op.ResetTrial();
+            op.StartCalibration(); op.ConfirmCalibration();
+            RunToSetup(op, now);
+            op.StartTrial();
+            Assert.AreEqual(RecordingStatus.Failed, rc.Status);
+            Assert.AreEqual("camera busy", rc.LastError);
+            Assert.AreEqual(OperatorStep.Running, op.Step, "the trial goes on without recording");
+
+            // オフ・録画できない端末では録らない
+            cam.FailStart = false;
+            op.ResetTrial();
+            rc.Settings.enabled = false;
+            int before = cam.Started.Count;
+            op.StartCalibration(); op.ConfirmCalibration();
+            RunToSetup(op, now);
+            op.StartTrial();
+            Assert.AreEqual(before, cam.Started.Count);
+            op.ResetTrial();
+            rc.Settings.enabled = true;
+            cam.IsAvailable = false;
+            op.StartCalibration(); op.ConfirmCalibration();
+            RunToSetup(op, now);
+            op.StartTrial();
+            Assert.AreEqual(before, cam.Started.Count);
+            Assert.AreEqual(RecordingStatus.Off, rc.Status);
+            rc.Dispose();
+            rec.Dispose();
+            op.Dispose();
+        }
+
+        [Test]
+        public void Recording_HelperFunctions()
+        {
+            Directory.CreateDirectory(_dir);
+            Assert.AreEqual(Path.Combine(_dir, "a.mp4"), ExperimentRecordingController.UniquePath(_dir, "a"));
+            File.WriteAllText(Path.Combine(_dir, "a.mp4"), "");
+            Assert.AreEqual(Path.Combine(_dir, "a_2.mp4"), ExperimentRecordingController.UniquePath(_dir, "a"));
+            Assert.AreEqual(1.0, ExperimentRecordingController.EstimateHours((long)(ExperimentRecordingController.BytesPerSecond * 3600)), 1e-9);
+            Assert.AreEqual(0, ExperimentRecordingController.EstimateHours(-1));
+            Assert.Greater(StorageInfo.AvailableBytes(_dir), 0, "the temp drive has free space");
+        }
+
+        [Test]
+        public void Panel_ShowsRecordingAndDrivesRecordingSettings()
+        {
+            var (op, rec, now, cam, rc) = CreateRecordingSession();
+            op.LoadSelectedPattern();
+            var canvasGo = Track(new GameObject("Canvas", typeof(Canvas)));
+            ExperimentOperatorPanel panel = Track(new GameObject("Panel")).AddComponent<ExperimentOperatorPanel>();
+            panel.Initialize(op, canvasGo.GetComponent<Canvas>());
+
+            Assert.IsTrue(panel.Switches["rec_enabled"]);
+            panel.Buttons["rec_source_1"].onClick.Invoke();
+            Assert.AreEqual(RecordingSource.VirtualOnly, rc.Settings.source);
+            panel.Buttons["rec_quality_1"].onClick.Invoke();
+            Assert.AreEqual(RecordingQuality.High1080, rc.Settings.quality);
+            panel.Buttons["rec_enabled"].onClick.Invoke();
+            Assert.IsFalse(rc.Settings.enabled);
+            Assert.IsFalse(panel.Switches["rec_enabled"]);
+            panel.Buttons["rec_enabled"].onClick.Invoke();
+
+            RunToSetup(op, now);
+            op.AddSubject("山田");
+            panel.Buttons["primary"].onClick.Invoke();
+            Transform pill = canvasGo.transform.Find(ExperimentOperatorPanel.RootName + "/TopBar/RecPill");
+            Assert.IsTrue(pill.gameObject.activeSelf, "recording pill while running");
+            now[0] += 12;
+            panel.RefreshAll();
+            Assert.AreEqual("録画中 0:12", pill.Find("Text").GetComponent<Text>().text);
+
+            for (int i = 0; i < 3; i++) { now[0] += 1; panel.Buttons["force"].onClick.Invoke(); }
+            Assert.IsFalse(pill.gameObject.activeSelf);
+            Transform row = canvasGo.transform.Find(ExperimentOperatorPanel.RootName + "/StepCard/Body/Body_Completed/Recording");
+            Assert.IsTrue(row.gameObject.activeSelf);
+            StringAssert.Contains("S01-AR-T01.mp4", row.Find("Text").GetComponent<Text>().text);
+            StringAssert.Contains("0:15", row.Find("Text").GetComponent<Text>().text);
+            rc.Dispose();
+            rec.Dispose();
+            op.Dispose();
+        }
+
         [Test]
         public void Panel_EditInfoAndHistoryDialogs()
         {

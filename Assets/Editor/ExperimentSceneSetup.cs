@@ -63,6 +63,7 @@ public static class ExperimentSceneSetup
         ExperimentGuideView guide = GetOrAdd<ExperimentGuideView>(root);
         CalibrationDotsView dots = GetOrAdd<CalibrationDotsView>(root);
         OthelloTrackerOffsetAdjuster adjuster = GetOrAdd<OthelloTrackerOffsetAdjuster>(root);
+        XrealGlassesRecorder glassesRecorder = GetOrAdd<XrealGlassesRecorder>(root);
         ExperimentOperatorPanel panel = GetOrAdd<ExperimentOperatorPanel>(root);
         ExperimentDisplayProfile displayProfile = GetOrAdd<ExperimentDisplayProfile>(root);
 
@@ -88,6 +89,7 @@ public static class ExperimentSceneSetup
         Set(panel, "mockProvider", mock);
         Set(panel, "targetCanvas", handheldCanvas != null ? handheldCanvas.GetComponent<Canvas>() : null);
         Set(panel, "trackingSettings", adjuster);
+        Set(panel, "glassesRecorder", glassesRecorder);
         Set(panel, "cameraView", FindComponent<RawImage>(handheldCanvas, "Preview_Panel_Handheld/RawImage_HandheldPreview"));
         Set(panel, "overheadView", FindComponent<RawImage>(handheldCanvas, "Overhead_Panel_Handheld/RawImage_OverheadView"));
         Set(panel, "boardView", FindComponent<RawImage>(handheldCanvas, "MiniBoard_Panel_Handheld/RawImage_MiniBoard"));

@@ -3108,6 +3108,7 @@ GameObject:
   - component: {fileID: 694272797}
   - component: {fileID: 694272796}
   - component: {fileID: 694272806}
+  - component: {fileID: 694272807}
   m_Layer: 0
   m_Name: Experiment_System
   m_TagString: Untagged
@@ -3132,6 +3133,7 @@ MonoBehaviour:
   calibrationDots: {fileID: 694272798}
   offsetAdjuster: {fileID: 694272797}
   trackingSettings: {fileID: 694272797}
+  glassesRecorder: {fileID: 694272807}
   mockProvider: {fileID: 694272802}
   targetCanvas: {fileID: 736569372}
   cameraView: {fileID: 1400349477}
@@ -3153,6 +3155,17 @@ MonoBehaviour:
   autoIncrementOrder: 0
   resetConfirmSeconds: 2.5
   showMockOnDevice: 0
+  autoCalibrationDots: 1
+  conditions:
+  - AR
+  - "\u6BD4\u8F03\u6761\u4EF6"
+  autoEvaluateDelaySec: 1.5
+  failReasons:
+  - "\u7F6E\u304D\u9593\u9055\u3044"
+  - "\u8A8D\u8B58\u306E\u4E0D\u5177\u5408"
+  - "\u9014\u4E2D\u3067\u4E2D\u6B62"
+  - "\u305D\u306E\u4ED6"
+  questionnaireResource: ExperimentQuestionnaire
 --- !u!114 &694272797
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3228,8 +3241,10 @@ MonoBehaviour:
   controller: {fileID: 694272801}
   metadata:
     subjectId: 
+    subjectName: 
     condition: 
     order: 1
+    experimentId: 
     note: 
   outputFolder: ExperimentLogs
 --- !u!114 &694272801
@@ -3250,6 +3265,7 @@ MonoBehaviour:
   correctDebounceSec: 0.4
   errorDebounceSec: 0.4
   checkEmptyBoardWhenNoInitialStones: 1
+  requireSetupBeforeRunning: 1
 --- !u!114 &694272802
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3327,6 +3343,18 @@ MonoBehaviour:
   hiddenObjects:
   - {fileID: 1942884639}
   - {fileID: 2080773942}
+--- !u!114 &694272807
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 694272795}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6bf9e44c828b4780bdfe5216b378b25e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AROthello.XrealGlassesRecorder
 --- !u!1 &697567749
 GameObject:
   m_ObjectHideFlags: 0

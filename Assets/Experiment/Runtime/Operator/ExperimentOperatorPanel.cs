@@ -34,6 +34,8 @@ namespace AROthello.Experiment
         [SerializeField] private MonoBehaviour offsetAdjuster;
         [Tooltip("ITrackingSettings を実装したコンポーネント (任意。盤の認識状態・グラスの動きの向き・記録の設定)")]
         [SerializeField] private MonoBehaviour trackingSettings;
+        [Tooltip("IGlassesRecorder を実装したコンポーネント (任意。試行中のグラス画面の録画。実機では XrealGlassesRecorder)")]
+        [SerializeField] private MonoBehaviour glassesRecorder;
         [Tooltip("PC 確認用のモック盤面 (任意)")]
         [SerializeField] private MockBoardStateProvider mockProvider;
         [Tooltip("画面を置く Canvas (未設定なら専用の Screen Space - Overlay Canvas を作る)")]
@@ -135,6 +137,10 @@ namespace AROthello.Experiment
         private Text _stateText, _trackText, _viewTag, _viewEmptyText, _boardInfo, _headline, _stepName, _stepNext;
         private Text _idlePattern, _idleChip1, _idleChip2, _idleNote, _calibReadout, _checkCount, _checkNote;
         private Text _runProgress, _runNext, _runError, _runStat1, _runStat2, _doneTime, _doneErrors, _doneForced, _doneNote;
+        private GameObject _recPill, _recRow;
+        private Image _recPillBg, _recPillStroke, _recPillDot, _recRowBg, _recRowStroke;
+        private Text _recPillText, _recRowText, _recHint, _recStoreText, _recFreeText;
+        private float _freeSpaceTimer;
         private Text _trialNoText, _trialNoNote, _setupPattern, _expIdText, _evalSummary, _qNum, _qText, _scaleNow, _scaleMin, _scaleMid, _scaleMax;
         private Text _patternText, _detailText, _storePathText, _menuTitle;
         private Image _scaleNowBg;
@@ -189,6 +195,20 @@ namespace AROthello.Experiment
                 op.Store = new ExperimentRecordStore(logger.OutputDirectory);
                 op.Recorder = logger.Recorder;
                 op.Questionnaire = LoadQuestionnaire(logger.OutputDirectory);
+
+                IGlassesRecorder recorder = glassesRecorder as IGlassesRecorder;
+                if (recorder == null)
+                {
+                    foreach (MonoBehaviour mb in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+                    {
+                        if (mb is IGlassesRecorder r) { recorder = r; break; }
+                    }
+                }
+                op.Recording = new ExperimentRecordingController(controller.StateMachine, recorder, logger.OutputDirectory,
+                    () => op.Metadata, () => Time.realtimeSinceStartupAsDouble)
+                {
+                    Settings = LoadRecordingSettings()
+                };
             }
             if (string.IsNullOrEmpty(op.Metadata.condition) && conditions != null && conditions.Length > 0) op.SetCondition(conditions[0]);
             Initialize(op);
@@ -225,7 +245,67 @@ namespace AROthello.Experiment
         private void OnDestroy()
         {
             if (_operator != null) _operator.StateMachine.StateChanged -= OnStateChangedForDots;
+            _operator?.Recording?.Dispose();
             _operator?.Dispose();
+        }
+
+        // ---------------- 録画の設定 (端末に保存) ----------------
+
+        private const string PrefRecEnabled = "AROthello.Experiment.Recording.Enabled";
+        private const string PrefRecSource = "AROthello.Experiment.Recording.Source";
+        private const string PrefRecQuality = "AROthello.Experiment.Recording.Quality";
+
+        private static RecordingSettings LoadRecordingSettings()
+        {
+            return new RecordingSettings
+            {
+                enabled = PlayerPrefs.GetInt(PrefRecEnabled, 1) == 1,
+                source = (RecordingSource)Mathf.Clamp(PlayerPrefs.GetInt(PrefRecSource, 0), 0, 2),
+                quality = (RecordingQuality)Mathf.Clamp(PlayerPrefs.GetInt(PrefRecQuality, 0), 0, 1)
+            };
+        }
+
+        private void SaveRecordingSettings()
+        {
+            ExperimentRecordingController rc = _operator?.Recording;
+            if (rc == null || !Application.isPlaying) return;
+            PlayerPrefs.SetInt(PrefRecEnabled, rc.Settings.enabled ? 1 : 0);
+            PlayerPrefs.SetInt(PrefRecSource, (int)rc.Settings.source);
+            PlayerPrefs.SetInt(PrefRecQuality, (int)rc.Settings.quality);
+            PlayerPrefs.Save();
+        }
+
+        public void OnToggleRecording()
+        {
+            ExperimentRecordingController rc = _operator?.Recording;
+            if (rc == null) return;
+            rc.Settings.enabled = !rc.Settings.enabled;
+            SaveRecordingSettings();
+            RefreshAll();
+        }
+
+        public void OnRecordingSource(int index)
+        {
+            ExperimentRecordingController rc = _operator?.Recording;
+            if (rc == null) return;
+            rc.Settings.source = (RecordingSource)Mathf.Clamp(index, 0, 2);
+            SaveRecordingSettings();
+            RefreshAll();
+        }
+
+        public void OnRecordingQuality(int index)
+        {
+            ExperimentRecordingController rc = _operator?.Recording;
+            if (rc == null) return;
+            rc.Settings.quality = (RecordingQuality)Mathf.Clamp(index, 0, 1);
+            SaveRecordingSettings();
+            RefreshAll();
+        }
+
+        private static string FormatDuration(double sec)
+        {
+            int s = Mathf.Max(0, Mathf.FloorToInt((float)sec));
+            return $"{s / 60}:{s % 60:00}";
         }
 
         /// <summary>四隅の印を差し替える (テスト用)。</summary>
@@ -576,20 +656,99 @@ namespace AROthello.Experiment
             _stateText.text = chip.text;
             _stateDot.color = chip.color;
 
+            bool recShown = RefreshRecordingPill(step);
             bool hasTracking = _settings != null;
             _trackDot.gameObject.SetActive(hasTracking);
             _trackText.gameObject.SetActive(hasTracking);
+            _trackText.rectTransform.anchorMax = new Vector2(recShown ? 0.58f : 0.75f, 1f);
             if (hasTracking)
             {
                 bool ok = _settings.IsTracking;
                 _trackDot.color = ok ? ColOk : ColNg;
-                _trackText.text = ok ? "盤を認識中" : "盤が見えていません";
+                _trackText.text = recShown ? (ok ? "認識中" : "見えていません") : (ok ? "盤を認識中" : "盤が見えていません");
             }
             SetButtonColor("settings", IsOpen ? ColAccent : ColS2);
             SetLabel("settings", IsOpen ? "閉じる" : "設定");
 
             InstructionPatternData p = _operator.Library.Current ?? _operator.StateMachine.Pattern;
             _boardInfo.text = p != null ? $"パターン  <b><color=#E9EEF6>{p.patternId}</color></b>\n{p.stepCount} 手・難易度 {p.difficulty}" : "パターンなし";
+        }
+
+        /// <summary>上部バーの「録画中」。試行中に録画している (または失敗した) ときだけ出す。</summary>
+        private bool RefreshRecordingPill(OperatorStep step)
+        {
+            ExperimentRecordingController rc = _operator.Recording;
+            bool show = rc != null && step == OperatorStep.Running && rc.Settings.enabled && rc.Status != RecordingStatus.Off;
+            _recPill.SetActive(show);
+            if (!show) return false;
+            bool bad = rc.Status == RecordingStatus.Failed;
+            Color c = bad ? ColWarn : ColNg;
+            _recPillBg.color = new Color(c.r, c.g, c.b, 0.14f);
+            _recPillStroke.color = new Color(c.r, c.g, c.b, 0.5f);
+            _recPillDot.color = c;
+            _recPillText.color = bad ? Hex("#FFD08F") : Hex("#FFB0B0");
+            _recPillText.text = rc.Status == RecordingStatus.Recording ? $"録画中 {FormatDuration(rc.ElapsedSec)}"
+                : rc.Status == RecordingStatus.Starting ? "録画の準備中"
+                : bad ? "録画できません" : "録画を保存中";
+            return true;
+        }
+
+        /// <summary>完了の画面の「録画を保存しました」。</summary>
+        private void RefreshRecordingRow()
+        {
+            ExperimentRecordingController rc = _operator.Recording;
+            if (rc == null) { _recRow.SetActive(false); return; }
+            string id = _operator.LastTrialMetadata.experimentId;
+            RecordingResult r = rc.LastResult;
+            bool mine = r != null && !r.WasReset && r.ExperimentId == id;
+            bool stopping = rc.Status == RecordingStatus.Stopping;
+            bool failed = !mine && rc.Settings.enabled && rc.Status == RecordingStatus.Failed;
+            bool show = mine || stopping || failed;
+            _recRow.SetActive(show);
+            if (!show) return;
+
+            bool warn = failed || (mine && (!r.Success || r.FellBack));
+            Color c = warn ? ColWarn : ColNg;
+            _recRowBg.color = new Color(c.r, c.g, c.b, 0.08f);
+            _recRowStroke.color = new Color(c.r, c.g, c.b, 0.35f);
+            _recRowText.color = warn ? Hex("#FFD08F") : ColText;
+            if (stopping) _recRowText.text = "録画を保存しています…";
+            else if (failed) _recRowText.text = $"録画できませんでした: {rc.LastError}";
+            else if (!r.Success) _recRowText.text = $"録画できませんでした: {r.Error}";
+            else if (r.FellBack) _recRowText.text = $"カメラを開けず AR 表示だけで録画しました  <b><color=#A9C1FF>{r.FileName}</color></b>  {FormatDuration(r.DurationSec)}";
+            else _recRowText.text = $"録画を保存しました  <b><color=#A9C1FF>{r.FileName}</color></b>  {FormatDuration(r.DurationSec)}";
+        }
+
+        private void RefreshRecordingSettings()
+        {
+            ExperimentRecordingController rc = _operator.Recording;
+            if (rc == null || _recHint == null) return;
+            SetSwitch("rec_enabled", rc.Settings.enabled);
+            for (int i = 0; i < 3; i++) SetSegmentButton("rec_source_" + i, (int)rc.Settings.source == i);
+            for (int i = 0; i < 2; i++) SetSegmentButton("rec_quality_" + i, (int)rc.Settings.quality == i);
+            _recHint.text = "「見えている景色」はグラスのカメラ映像に AR 表示を重ねたもの。盤の認識と同じカメラを使うので、カメラを開けないときは自動で「AR 表示だけ」になります。被験者のグラスには録画中の表示を出しません。"
+                + (rc.IsAvailable ? "" : "\n<color=#F2A33A>この端末 (エディタ) では録画できません。実機 (Beam Pro) で録画します。</color>");
+            string parent = Path.GetFileName(Path.GetDirectoryName(rc.VideoDirectory) ?? "");
+            _recStoreText.text = $"{parent}/{ExperimentRecordingController.VideoFolder}/実験ID.mp4";
+            if (IsOpen && Time.unscaledTime >= _freeSpaceTimer)
+            {
+                _freeSpaceTimer = Time.unscaledTime + 2f;
+                long bytes = StorageInfo.AvailableBytes(Application.persistentDataPath);
+                if (bytes < 0) _recFreeText.text = "(分かりません)";
+                else
+                {
+                    double hours = ExperimentRecordingController.EstimateHours(bytes);
+                    string quality = rc.Settings.quality == RecordingQuality.High1080 ? "1080p" : "720p";
+                    _recFreeText.text = $"{bytes / 1e9:0.0} GB（{quality} で約 {hours:0.#} 時間分）";
+                    _recFreeText.color = hours < 1.0 ? ColWarn : ColMuted;
+                }
+            }
+        }
+
+        private void SetSegmentButton(string id, bool on)
+        {
+            SetButtonColor(id, on ? ColAccent : Clear);
+            if (_labels.TryGetValue(id, out Text t)) t.color = on ? Color.white : ColMuted;
         }
 
         private void RefreshStages(OperatorStep step)
@@ -707,6 +866,7 @@ namespace AROthello.Experiment
                     _doneTime.text = r != null ? $"<size=40><b>{r.TotalTimeSec:0.0}</b></size> 秒" : "-";
                     _doneErrors.text = r != null ? $"<size=40><b>{r.TotalErrorCount}</b></size> 回" : "-";
                     _doneForced.text = r != null ? $"<size=40><b>{forced}</b></size> 手" : "-";
+                    RefreshRecordingRow();
                     _doneNote.text = autoEvaluateDelaySec > 0f
                         ? "まもなく評価に進みます。成功か失敗かとメモ、続けて直後アンケートを記録します。"
                         : "「評価へ」で、成功か失敗かとメモ、続けて直後アンケートを記録します。";
@@ -775,9 +935,11 @@ namespace AROthello.Experiment
             TrialResult r = _operator.LastTrial;
             int forced = 0;
             if (r != null) foreach (StepResult s in r.Steps) if (s.IsOverride) forced++;
-            _evalSummary.text = r != null
+            string video = _operator.Recording != null ? _operator.Recording.VideoFileFor(_operator.LastTrialMetadata.experimentId) : "";
+            _evalSummary.text = (r != null
                 ? $"<color=#A9C1FF><b>{_operator.LastTrialMetadata.experimentId}</b></color>　　{r.TotalTimeSec:0.0} 秒　・　間違い {r.TotalErrorCount} 回　・　手動 {forced} 手"
-                : _operator.LastTrialMetadata.experimentId;
+                : _operator.LastTrialMetadata.experimentId)
+                + (string.IsNullOrEmpty(video) ? "" : "　・　<color=#FFB0B0>● 録画あり</color>");
 
             bool ok = e.Success == true, ng = e.Success == false;
             SetTile("result_success", ok, ColOk);
@@ -870,6 +1032,7 @@ namespace AROthello.Experiment
                 if (_sliderValues[i] != null) _sliderValues[i].text = $"{cm[i]:+0.0;-0.0;0.0} cm";
             }
 
+            RefreshRecordingSettings();
             if (_settings == null) return;
             for (int b = 0; b < BasisNames.Length; b++)
             {
@@ -976,6 +1139,7 @@ namespace AROthello.Experiment
             _switchKnobs.Clear();
             _subjectsSignature = "";
             _lastStep = (OperatorStep)(-1);
+            _recHint = _recStoreText = _recFreeText = null;
 
             if (targetCanvas == null)
             {
@@ -1006,6 +1170,7 @@ namespace AROthello.Experiment
             BuildSettingsSheet();
             BuildSubjectMenu();
             BuildDialog();
+            _freeSpaceTimer = 0f;
             AdoptLegacyViews();
             RefreshViews();
         }
@@ -1026,6 +1191,15 @@ namespace AROthello.Experiment
             AddStroke((RectTransform)settings.transform, ColLine, Pill);
             FixedImg((RectTransform)settings.transform, "Icon", new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(30f, 30f), ColText, UiSprites.Sliders);
             Pad(_labels["settings"].rectTransform, 50, 8);
+
+            // 録画中の表示 (試行中に録画しているときだけ)
+            _recPillBg = Img(bar, "RecPill", new Vector2(0.585f, 0.2f), new Vector2(0.75f, 0.8f), new Color(ColNg.r, ColNg.g, ColNg.b, 0.14f), Pill);
+            _recPillStroke = AddStroke(_recPillBg.rectTransform, new Color(ColNg.r, ColNg.g, ColNg.b, 0.5f), Pill);
+            _recPillDot = FixedImg(_recPillBg.rectTransform, "Dot", new Vector2(0f, 0.5f), new Vector2(26f, 0f), new Vector2(16f, 16f), ColNg, UiSprites.Circle);
+            _recPillText = Txt(_recPillBg.rectTransform, "Text", "", 21, Hex("#FFB0B0"), TextAnchor.MiddleLeft, Vector2.zero, Vector2.one, true);
+            Pad(_recPillText.rectTransform, 42, 8);
+            _recPill = _recPillBg.gameObject;
+            _recPill.SetActive(false);
         }
 
         private void BuildViewArea()
@@ -1233,7 +1407,16 @@ namespace AROthello.Experiment
             _doneTime = StatTile(b, "Time", "時間", new Vector2(0f, 0.7f), new Vector2(0.32f, 1f));
             _doneErrors = StatTile(b, "Errors", "間違い", new Vector2(0.34f, 0.7f), new Vector2(0.66f, 1f));
             _doneForced = StatTile(b, "Forced", "手動で進めた", new Vector2(0.68f, 0.7f), new Vector2(1f, 1f));
-            _doneNote = Txt(b, "Note", "", 21, ColMuted, TextAnchor.UpperLeft, new Vector2(0f, 0.4f), new Vector2(1f, 0.64f));
+            _doneNote = Txt(b, "Note", "", 21, ColMuted, TextAnchor.UpperLeft, new Vector2(0f, 0.18f), new Vector2(1f, 0.44f));
+
+            // 録画を保存しました (録画したときだけ)
+            _recRowBg = Img(b, "Recording", new Vector2(0f, 0.5f), new Vector2(1f, 0.635f), new Color(ColNg.r, ColNg.g, ColNg.b, 0.08f), 16f);
+            _recRowStroke = AddStroke(_recRowBg.rectTransform, new Color(ColNg.r, ColNg.g, ColNg.b, 0.35f), 16f);
+            FixedImg(_recRowBg.rectTransform, "Dot", new Vector2(0f, 0.5f), new Vector2(26f, 0f), new Vector2(16f, 16f), ColNg, UiSprites.Circle);
+            _recRowText = Txt(_recRowBg.rectTransform, "Text", "", 20, ColText, TextAnchor.MiddleLeft, Vector2.zero, Vector2.one);
+            Pad(_recRowText.rectTransform, 46, 14);
+            _recRow = _recRowBg.gameObject;
+            _recRow.SetActive(false);
         }
 
         // ---------------- 実験ID ----------------
@@ -1676,6 +1859,8 @@ namespace AROthello.Experiment
                 GroupHint(perf, "オフにしたときに CSV に保存します。実験ログとは別のファイルです。");
             }
 
+            if (_operator.Recording != null) BuildRecordingSettings(content);
+
             Section(content, "記録の保存先");
             RectTransform store = Group(content);
             _storePathText = Txt(store, "Path", "", 19, ColMuted, TextAnchor.MiddleLeft, Vector2.zero, Vector2.one);
@@ -1703,6 +1888,54 @@ namespace AROthello.Experiment
             logLe.preferredHeight = 360;
             logLe.minHeight = 360;
             _logSlot.gameObject.AddComponent<RectMask2D>();
+        }
+
+        private void BuildRecordingSettings(RectTransform content)
+        {
+            Section(content, "グラス画面の録画");
+            RectTransform group = Group(content);
+            RectTransform enabledRow = Row(group, 76, group);
+            RowText(enabledRow, "試行中に録画する", -1);
+            SwitchButton(enabledRow, "rec_enabled", OnToggleRecording);
+            RectTransform sourceRow = Row(group, 84, group);
+            RowText(sourceRow, "録るもの", 150);
+            SegmentRow(sourceRow, "rec_source_", new[] { "見えている景色", "AR 表示だけ", "カメラ映像だけ" }, OnRecordingSource);
+            _recHint = Txt(group, "Hint", "", 20, ColMuted, TextAnchor.UpperLeft, Vector2.zero, Vector2.one);
+            _recHint.gameObject.AddComponent<LayoutElement>().minHeight = 40;
+
+            RectTransform quality = Group(content);
+            RectTransform qualityRow = Row(quality, 84, quality);
+            RowText(qualityRow, "画質", 150);
+            SegmentRow(qualityRow, "rec_quality_", new[] { "標準 720p", "高 1080p" }, OnRecordingQuality);
+            GroupHint(quality, "高いほど Beam Pro の負荷が上がり、盤の認識のフレームレートが落ちることがあります。どちらも 30fps。");
+
+            RectTransform store = Group(content);
+            RectTransform pathRow = Row(store, 72, store);
+            RowText(pathRow, "保存先", 150);
+            _recStoreText = RowText(pathRow, "", -1);
+            _recStoreText.alignment = TextAnchor.MiddleRight;
+            _recStoreText.color = ColMuted;
+            _recStoreText.fontSize = 20;
+            RectTransform freeRow = Row(store, 72, store);
+            RowText(freeRow, "本体の空き", 150);
+            _recFreeText = RowText(freeRow, "", -1);
+            _recFreeText.alignment = TextAnchor.MiddleRight;
+            _recFreeText.color = ColMuted;
+            _recFreeText.fontSize = 21;
+            GroupHint(store, "やり直しで中断した試行も、途中までを「実験ID_reset.mp4」で残します。");
+        }
+
+        /// <summary>行の残りの幅いっぱいのセグメント切り替え。</summary>
+        private void SegmentRow(RectTransform row, string idPrefix, string[] labels, Action<int> onSelect)
+        {
+            Image track = Img(row, "Track", Vector2.zero, Vector2.one, ColS2, Pill);
+            track.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1;
+            for (int i = 0; i < labels.Length; i++)
+            {
+                int captured = i;
+                float w = 1f / labels.Length;
+                Btn(track.rectTransform, idPrefix + i, labels[i], new Vector2(i * w + 0.006f, 0.1f), new Vector2((i + 1) * w - 0.006f, 0.9f), Clear, ColMuted, 21, () => onSelect(captured), Pill);
+            }
         }
 
         private void Section(RectTransform parent, string title)

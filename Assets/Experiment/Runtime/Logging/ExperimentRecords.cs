@@ -308,7 +308,7 @@ namespace AROthello.Experiment
 
         public const string EvaluationHeader =
             "experiment_id,subject_id,subject_name,condition,order,pattern_id,difficulty,step_count,tct_sec,total_errors,override_count," +
-            "result,fail_reason,memo,completed_at,evaluated_at";
+            "result,fail_reason,memo,completed_at,evaluated_at,video_file";
 
         public const string QuestionnaireHeader =
             "experiment_id,subject_id,condition,order,pattern_id,question_id,answer,answer_label,answer_time_sec,answered_at";
@@ -374,7 +374,7 @@ namespace AROthello.Experiment
         }
 
         /// <summary>評価を evaluations.csv に 1 行追記する。成否どちらでも書く。</summary>
-        public bool WriteEvaluation(TrialMetadata meta, TrialResult trial, TrialEvaluation eval, DateTime completedAt)
+        public bool WriteEvaluation(TrialMetadata meta, TrialResult trial, TrialEvaluation eval, DateTime completedAt, string videoFile = "")
         {
             meta = meta ?? new TrialMetadata();
             eval = eval ?? new TrialEvaluation();
@@ -398,7 +398,8 @@ namespace AROthello.Experiment
                 ExperimentCsv.Escape(eval.Success == false ? eval.FailReason : ""),
                 ExperimentCsv.Escape(eval.Memo),
                 ExperimentCsv.FormatTime(completedAt),
-                ExperimentCsv.FormatTime(eval.EvaluatedAt)
+                ExperimentCsv.FormatTime(eval.EvaluatedAt),
+                ExperimentCsv.Escape(videoFile)
             });
             return Append(EvaluationFileName, EvaluationHeader, row);
         }
