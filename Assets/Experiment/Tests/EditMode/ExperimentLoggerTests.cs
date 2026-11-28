@@ -151,7 +151,7 @@ namespace AROthello.Experiment.Tests
             string[] lines = Lines(log.StepCsv);
 
             Assert.AreEqual(
-                "subject_id,condition,order,pattern_id,difficulty,step_count,step,target_coord,target_color,step_time_sec,error_type,is_override,avg_fps,note",
+                "subject_id,condition,order,pattern_id,difficulty,step_count,step,target_coord,target_color,step_time_sec,error_type,is_override,avg_fps,note,experiment_id",
                 lines[0]);
             Assert.AreEqual(1 + 3, lines.Length, "header + 3 steps");
 

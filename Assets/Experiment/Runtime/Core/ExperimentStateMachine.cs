@@ -8,6 +8,8 @@ namespace AROthello.Experiment
     ///
     /// 状態遷移: Idle → (BeginCalibration) → Calibration → (CompleteCalibration) → InitialBoardCheck
     ///           → (開始前の盤面が正しい状態でデバウンス時間続く) → Running → (全手順確定) → Completed
+    /// RequireSetupBeforeRunning のときは、開始前チェックの後に Setup (実験者が被験者・試行番号を決める) を挟み、
+    /// StartTrial で Running になる。Setup 中に盤面が初期配置から崩れたら InitialBoardCheck に戻る。
     ///
     /// 判定の考え方:
     /// - 「期待盤面」= 初期石 + 確定済みの手順の石。現在の手順で置くべきマスだけが空。
@@ -63,6 +65,12 @@ namespace AROthello.Experiment
         /// false の場合、初期石が無ければ CompleteCalibration で直ちに Running になる。
         /// </summary>
         public bool CheckEmptyBoardWhenNoInitialStones { get; set; } = true;
+
+        /// <summary>
+        /// 開始前チェックの後に Setup 状態を挟み、StartTrial を呼ぶまで試行を始めない。
+        /// false (既定) なら従来どおり、開始前チェックがそろった時点で試行を始める。
+        /// </summary>
+        public bool RequireSetupBeforeRunning { get; set; }
 
         // ---------------- イベント ----------------
 
@@ -146,7 +154,7 @@ namespace AROthello.Experiment
             if (_state != ExperimentState.Calibration) return false;
             if (!_pattern.HasInitialStones && !CheckEmptyBoardWhenNoInitialStones)
             {
-                StartRunning(time);
+                BoardReady(time);
             }
             else
             {
@@ -183,8 +191,11 @@ namespace AROthello.Experiment
 
                 case ExperimentState.InitialBoardCheck:
                     _initialCheckOverridden = true;
-                    StartRunning(time);
+                    BoardReady(time);
                     return true;
+
+                case ExperimentState.Setup:
+                    return StartTrial(time);
 
                 case ExperimentState.Running:
                     double firstDetect = _pendingCorrectSince ?? time;
@@ -228,6 +239,14 @@ namespace AROthello.Experiment
             return true;
         }
 
+        /// <summary>Setup 状態から試行を始める。</summary>
+        public bool StartTrial(double time)
+        {
+            if (_state != ExperimentState.Setup) return false;
+            StartRunning(time);
+            return true;
+        }
+
         public const string DefaultOverrideNote = "manual override";
         public const string StepBackNote = "redo after step back";
 
@@ -242,6 +261,9 @@ namespace AROthello.Experiment
                     break;
                 case ExperimentState.Running:
                     ProcessRunning(board, time);
+                    break;
+                case ExperimentState.Setup:
+                    ProcessSetup(board, time);
                     break;
             }
         }
@@ -270,7 +292,40 @@ namespace AROthello.Experiment
             if (!_pendingCorrectSince.HasValue) _pendingCorrectSince = time;
             if (time - _pendingCorrectSince.Value >= CorrectDebounceSec - TimeEpsilon)
             {
+                BoardReady(time);
+            }
+        }
+
+        /// <summary>開始前の盤面がそろった (または省略された)。Setup を挟むか、直ちに試行を始める。</summary>
+        private void BoardReady(double time)
+        {
+            if (!RequireSetupBeforeRunning)
+            {
                 StartRunning(time);
+                return;
+            }
+            _pendingCorrectSince = null;
+            _pendingErrorSince = null;
+            SetState(ExperimentState.Setup);
+        }
+
+        /// <summary>Setup 中に盤面が初期配置から崩れたら (デバウンス後) 開始前チェックへ戻る。チェックを省略していた場合は見ない。</summary>
+        private void ProcessSetup(BoardState board, double time)
+        {
+            if (_initialCheckOverridden) return;
+            CollectMismatches(_initialBoard, board, _mismatchBuffer);
+            if (_mismatchBuffer.Count == 0)
+            {
+                _pendingErrorSince = null;
+                return;
+            }
+            if (!_pendingErrorSince.HasValue) _pendingErrorSince = time;
+            if (time - _pendingErrorSince.Value >= ErrorDebounceSec - TimeEpsilon)
+            {
+                ResetInitialCheckStatus();
+                _pendingErrorSince = null;
+                SetState(ExperimentState.InitialBoardCheck);
+                ProcessInitialCheck(board, time);
             }
         }
 

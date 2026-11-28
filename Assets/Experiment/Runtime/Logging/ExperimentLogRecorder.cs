@@ -63,12 +63,31 @@ namespace AROthello.Experiment
             File.WriteAllText(path, log.StepCsv, Utf8Bom);
 
             string summaryPath = Path.Combine(Directory, SummaryFileName);
+            RotateIfHeaderChanged(summaryPath, ExperimentCsv.SummaryHeader);
             if (!File.Exists(summaryPath))
             {
                 File.WriteAllText(summaryPath, ExperimentCsv.SummaryHeader + "\n", Utf8Bom);
             }
             File.AppendAllText(summaryPath, log.SummaryRow + "\n", Utf8Bom);
             return path;
+        }
+
+        /// <summary>
+        /// 既存ファイルの見出し行が今の書式と違えば (列を足す前の古いファイル)、名前を変えて残し、新しいファイルを始める。
+        /// 古いファイルは消さない (試行回数を数えるときは両方読む)。
+        /// </summary>
+        public static void RotateIfHeaderChanged(string path, string header)
+        {
+            if (!File.Exists(path)) return;
+            string first;
+            using (var reader = new StreamReader(path, Encoding.UTF8, true)) first = reader.ReadLine() ?? "";
+            if (first.TrimStart('﻿') == header) return;
+            string dir = Path.GetDirectoryName(path) ?? "";
+            string name = Path.GetFileNameWithoutExtension(path);
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string moved = Path.Combine(dir, $"{name}_before_{stamp}.csv");
+            for (int n = 2; File.Exists(moved); n++) moved = Path.Combine(dir, $"{name}_before_{stamp}_{n}.csv");
+            File.Move(path, moved);
         }
     }
 

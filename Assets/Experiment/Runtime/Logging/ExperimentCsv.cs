@@ -10,14 +10,22 @@ namespace AROthello.Experiment
     public class TrialMetadata
     {
         public string subjectId = "";
+        /// <summary>被験者の名前 (評価 CSV に出す)</summary>
+        public string subjectName = "";
         public string condition = "";
-        /// <summary>実施順 (1 始まり)</summary>
+        /// <summary>試行番号 = その被験者の何回目の試行か (1 始まり)。CSV の order 列に出る。</summary>
         public int order = 1;
+        /// <summary>被験者・条件・試行番号から作る ID (例: S01-AR-T03)。全ログに出る。</summary>
+        public string experimentId = "";
         public string note = "";
 
         public TrialMetadata Clone()
         {
-            return new TrialMetadata { subjectId = subjectId, condition = condition, order = order, note = note };
+            return new TrialMetadata
+            {
+                subjectId = subjectId, subjectName = subjectName, condition = condition, order = order,
+                experimentId = experimentId, note = note
+            };
         }
     }
 
@@ -28,11 +36,11 @@ namespace AROthello.Experiment
     {
         public const string StepHeader =
             "subject_id,condition,order,pattern_id,difficulty,step_count,step,target_coord,target_color," +
-            "step_time_sec,error_type,is_override,avg_fps,note";
+            "step_time_sec,error_type,is_override,avg_fps,note,experiment_id";
 
         public const string SummaryHeader =
             "subject_id,condition,order,pattern_id,difficulty,step_count,tct_sec,total_errors,override_count," +
-            "avg_fps,started_at,completed_at,note";
+            "avg_fps,started_at,completed_at,note,experiment_id";
 
         /// <summary>誤りなしのときの error_type</summary>
         public const string NoError = "none";
@@ -107,7 +115,8 @@ namespace AROthello.Experiment
                 FormatErrorTypes(step?.ErrorTypes),
                 step != null && step.IsOverride ? "1" : "0",
                 FormatNumber(avgFps),
-                Escape(JoinNotes(meta.note, step?.Note))
+                Escape(JoinNotes(meta.note, step?.Note)),
+                Escape(meta.experimentId)
             };
             return string.Join(",", fields);
         }
@@ -133,7 +142,8 @@ namespace AROthello.Experiment
                 FormatNumber(avgFps),
                 startedAt.ToString("yyyy-MM-ddTHH:mm:ss", Inv),
                 completedAt.ToString("yyyy-MM-ddTHH:mm:ss", Inv),
-                Escape(JoinNotes(meta.note, trial != null && trial.InitialCheckOverridden ? InitialCheckOverriddenNote : null))
+                Escape(JoinNotes(meta.note, trial != null && trial.InitialCheckOverridden ? InitialCheckOverriddenNote : null)),
+                Escape(meta.experimentId)
             };
             return string.Join(",", fields);
         }
@@ -153,6 +163,70 @@ namespace AROthello.Experiment
             }
             return sb.ToString();
         }
+
+        /// <summary>
+        /// CSV テキスト全体を行ごとのフィールドに分ける (引用符・引用符内のカンマや改行に対応)。
+        /// 先頭の BOM は取り除く。空行は飛ばす。
+        /// </summary>
+        public static List<string[]> Parse(string text)
+        {
+            var rows = new List<string[]>();
+            if (string.IsNullOrEmpty(text)) return rows;
+            if (text[0] == '\uFEFF') text = text.Substring(1);
+
+            var fields = new List<string>();
+            var sb = new StringBuilder();
+            bool quoted = false, any = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char ch = text[i];
+                if (quoted)
+                {
+                    if (ch == '"')
+                    {
+                        if (i + 1 < text.Length && text[i + 1] == '"') { sb.Append('"'); i++; }
+                        else quoted = false;
+                    }
+                    else sb.Append(ch);
+                    continue;
+                }
+                switch (ch)
+                {
+                    case '"': quoted = true; any = true; break;
+                    case ',': fields.Add(sb.ToString()); sb.Clear(); any = true; break;
+                    case '\r': break;
+                    case '\n':
+                        if (any || sb.Length > 0) { fields.Add(sb.ToString()); rows.Add(fields.ToArray()); }
+                        fields.Clear(); sb.Clear(); any = false;
+                        break;
+                    default: sb.Append(ch); any = true; break;
+                }
+            }
+            if (any || sb.Length > 0) { fields.Add(sb.ToString()); rows.Add(fields.ToArray()); }
+            return rows;
+        }
+
+        /// <summary>見出し行から 列名 → 位置 の表を作る。</summary>
+        public static Dictionary<string, int> IndexHeader(string[] header)
+        {
+            var map = new Dictionary<string, int>();
+            if (header == null) return map;
+            for (int i = 0; i < header.Length; i++)
+            {
+                string key = header[i].Trim();
+                if (!map.ContainsKey(key)) map[key] = i;
+            }
+            return map;
+        }
+
+        /// <summary>列名で値を取る (列が無い・行が短いときは空)。</summary>
+        public static string Field(string[] row, Dictionary<string, int> col, string name)
+        {
+            return row != null && col != null && col.TryGetValue(name, out int i) && i < row.Length ? row[i] : "";
+        }
+
+        /// <summary>日時の書式 (ISO 8601、秒まで)。</summary>
+        public static string FormatTime(DateTime t) => t.ToString("yyyy-MM-ddTHH:mm:ss", Inv);
 
         /// <summary>ファイル名に使えない文字を '_' に置き換える。空なら fallback。</summary>
         public static string SanitizeFileName(string name, string fallback = "na")

@@ -14,7 +14,9 @@ namespace AROthello.Experiment
         /// <summary>試行中</summary>
         Running = 3,
         /// <summary>全手順が完了</summary>
-        Completed = 4
+        Completed = 4,
+        /// <summary>開始前の盤面がそろい、実験者が被験者・試行番号を決めて開始するのを待っている (RequireSetupBeforeRunning のとき)</summary>
+        Setup = 5
     }
 
     /// <summary>盤面の誤り。</summary>

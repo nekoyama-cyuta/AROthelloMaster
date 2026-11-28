@@ -30,6 +30,9 @@ namespace AROthello.Experiment
         [Tooltip("初期石の無いパターンでも、開始前に盤面が空であることを確認する")]
         [SerializeField] private bool checkEmptyBoardWhenNoInitialStones = true;
 
+        [Tooltip("開始前チェックの後に「実験ID」の手順 (被験者・試行番号を決める) を挟み、実験者が開始するまで試行を始めない")]
+        [SerializeField] private bool requireSetupBeforeRunning = true;
+
         private readonly ExperimentStateMachine _stateMachine = new ExperimentStateMachine();
         private IBoardStateProvider _provider;
 
@@ -78,6 +81,7 @@ namespace AROthello.Experiment
             _stateMachine.CorrectDebounceSec = correctDebounceSec;
             _stateMachine.ErrorDebounceSec = errorDebounceSec;
             _stateMachine.CheckEmptyBoardWhenNoInitialStones = checkEmptyBoardWhenNoInitialStones;
+            _stateMachine.RequireSetupBeforeRunning = requireSetupBeforeRunning;
         }
 
         private void OnBoardUpdated(BoardState board, double time)

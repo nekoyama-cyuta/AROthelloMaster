@@ -314,7 +314,8 @@ namespace AROthello.Experiment.Tests
                 _sm.ForceAdvance(0.1);
                 _sm.ForceAdvance(1); _sm.ForceAdvance(2); _sm.ForceAdvance(3);
             }
-            StringAssert.EndsWith(ExperimentCsv.InitialCheckOverriddenNote, sink.Logs.Single().SummaryRow);
+            string[] summaryHeader = ExperimentCsv.SummaryHeader.Split(',');
+            Assert.AreEqual(ExperimentCsv.InitialCheckOverriddenNote, sink.Logs.Single().SummaryRow.Split(',')[Array.IndexOf(summaryHeader, "note")]);
         }
 
         // ---------------- 実験者操作 ----------------
@@ -356,7 +357,7 @@ namespace AROthello.Experiment.Tests
         {
             var (op, lib, _) = CreateOperator(out double[] now);
             op.LoadSelectedPattern();
-            Assert.AreEqual("キャリブ開始", op.PrimaryActionLabel);
+            Assert.AreEqual("位置合わせを始める", op.PrimaryActionLabel);
 
             Assert.IsTrue(op.PrimaryAction());
             Assert.AreEqual(ExperimentState.Calibration, _sm.State);
@@ -378,9 +379,9 @@ namespace AROthello.Experiment.Tests
             Assert.IsNotNull(op.LastTrial);
             StringAssert.Contains("TCT 5.00s", op.BuildStatusText());
 
-            Assert.AreEqual("次の試行", op.PrimaryActionLabel);
+            Assert.AreEqual("評価へ", op.PrimaryActionLabel);
             Assert.IsTrue(op.SelectNextPattern(), "unlocked after completion");
-            Assert.IsTrue(op.PrimaryAction(), "next trial starts with the newly selected pattern");
+            Assert.IsTrue(op.StartCalibration(), "next trial starts with the newly selected pattern");
             Assert.AreEqual("P2", _sm.Pattern.patternId);
             Assert.AreEqual(ExperimentState.Calibration, _sm.State);
             op.Dispose();
@@ -432,16 +433,17 @@ namespace AROthello.Experiment.Tests
             Assert.IsFalse(panel.IsOpen, "settings closed by default");
             panel.Buttons["settings"].onClick.Invoke();
             Assert.IsTrue(panel.IsOpen);
-            panel.Buttons["settings_close"].onClick.Invoke();
+            Assert.AreEqual("閉じる", panel.Labels["settings"].text, "the top-bar button closes the sheet");
+            panel.Buttons["settings"].onClick.Invoke();
             Assert.IsFalse(panel.IsOpen);
 
             Assert.AreEqual("位置合わせを始める", panel.Labels["primary"].text);
             panel.Buttons["primary"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Calibration, _sm.State);
-            Assert.AreEqual("位置OK・試行を始める", panel.Labels["primary"].text, "plain label follows the state");
+            Assert.AreEqual("位置OK・初期配置へ", panel.Labels["primary"].text, "plain label follows the state");
             panel.Buttons["primary"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.InitialBoardCheck, _sm.State);
-            Assert.AreEqual("確認をとばして始める", panel.Labels["force"].text);
+            Assert.AreEqual("確認をとばして次へ", panel.Labels["force"].text);
 
             panel.Buttons["force"].onClick.Invoke();
             Assert.AreEqual(ExperimentState.Running, _sm.State);
@@ -496,17 +498,19 @@ namespace AROthello.Experiment.Tests
             Assert.AreEqual(1, fake.OffsetBasis);
             panel.Buttons["typical_offset"].onClick.Invoke();
             Assert.AreEqual(1, fake.TypicalOffsetCount);
-            panel.Buttons["axis_1_invert"].onClick.Invoke();
-            Assert.IsTrue(fake.Inverted[(int)TrackingAxis.Pitch]);
-            panel.Buttons["axis_1_normal"].onClick.Invoke();
-            Assert.IsFalse(fake.Inverted[(int)TrackingAxis.Pitch]);
+            panel.Buttons["axis_1"].onClick.Invoke();
+            Assert.IsTrue(fake.Inverted[(int)TrackingAxis.Pitch], "switch turns inversion on");
+            Assert.IsTrue(panel.Switches["axis_1"]);
+            panel.Buttons["axis_1"].onClick.Invoke();
+            Assert.IsFalse(fake.Inverted[(int)TrackingAxis.Pitch], "and off again");
+            Assert.IsFalse(panel.Switches["axis_1"]);
             panel.Buttons["recalibrate"].onClick.Invoke();
             Assert.AreEqual(1, fake.RecalibrateCount);
 
-            Assert.AreEqual("動作の記録を始める", panel.Labels["perf_log"].text);
+            Assert.IsFalse(panel.Switches["perf_log"]);
             panel.Buttons["perf_log"].onClick.Invoke();
             Assert.IsTrue(fake.IsPerformanceLogging);
-            Assert.AreEqual("記録を止めて保存する", panel.Labels["perf_log"].text);
+            Assert.IsTrue(panel.Switches["perf_log"]);
             op.Dispose();
         }
 
