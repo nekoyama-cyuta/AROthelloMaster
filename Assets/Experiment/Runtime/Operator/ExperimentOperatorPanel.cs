@@ -60,6 +60,8 @@ namespace AROthello.Experiment
         [SerializeField, Min(0.5f)] private float resetConfirmSeconds = 2.5f;
         [Tooltip("モック盤面の操作ボタンを実機でも出す (既定はエディタだけ)")]
         [SerializeField] private bool showMockOnDevice = false;
+        [Tooltip("位置合わせを始めたら四隅の印 (紫) を自動で出し、試行を始めたら (または待機に戻ったら) 自動で消す")]
+        [SerializeField] private bool autoCalibrationDots = true;
 
         [Header("実験ID・評価・アンケート")]
         [Tooltip("実験ID の手順で選べる条件")]
@@ -222,13 +224,27 @@ namespace AROthello.Experiment
 
         private void OnDestroy()
         {
+            if (_operator != null) _operator.StateMachine.StateChanged -= OnStateChangedForDots;
             _operator?.Dispose();
+        }
+
+        /// <summary>四隅の印を差し替える (テスト用)。</summary>
+        public void SetCalibrationDots(CalibrationDotsView dots) => calibrationDots = dots;
+
+        /// <summary>位置合わせを始めたら四隅の印を出し、試行を始めたら・待機に戻ったら消す。</summary>
+        private void OnStateChangedForDots(ExperimentState prev, ExperimentState next)
+        {
+            if (!autoCalibrationDots || calibrationDots == null) return;
+            if (next == ExperimentState.Calibration) calibrationDots.SetVisible(true);
+            else if (next == ExperimentState.Running || next == ExperimentState.Idle) calibrationDots.SetVisible(false);
         }
 
         /// <summary>操作ロジックを受け取り画面を組み立てる (Start から呼ばれる。テスト用に公開)。</summary>
         public void Initialize(ExperimentOperator op, Canvas canvas = null)
         {
+            if (_operator != null) _operator.StateMachine.StateChanged -= OnStateChangedForDots;
             _operator = op ?? throw new ArgumentNullException(nameof(op));
+            _operator.StateMachine.StateChanged += OnStateChangedForDots;
             _operator.AutoIncrementOrder = autoIncrementOrder;
             _operator.ActionLogged += msg => Debug.Log($"[Experiment] {msg}");
             _adjuster = offsetAdjuster as IBoardOffsetAdjuster;

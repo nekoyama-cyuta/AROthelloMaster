@@ -550,6 +550,47 @@ namespace AROthello.Experiment.Tests
         }
 
         [Test]
+        public void Panel_CornerDots_ShownDuringAlignment_HiddenWhenTrialStarts()
+        {
+            var (op, rec, now) = CreateSession();
+            op.LoadSelectedPattern();
+            Transform boardRoot = Track(new GameObject("Board")).transform;
+            CalibrationDotsView dots = Track(new GameObject("Dots")).AddComponent<CalibrationDotsView>();
+            dots.BoardRoot = boardRoot;
+            var canvasGo = Track(new GameObject("Canvas", typeof(Canvas)));
+            ExperimentOperatorPanel panel = Track(new GameObject("Panel")).AddComponent<ExperimentOperatorPanel>();
+            panel.SetCalibrationDots(dots);
+            panel.Initialize(op, canvasGo.GetComponent<Canvas>());
+            Assert.IsFalse(dots.Visible);
+
+            panel.Buttons["primary"].onClick.Invoke();
+            Assert.IsTrue(dots.Visible, "shown when alignment starts");
+            Assert.AreEqual("● 四隅の印を消す", panel.Labels["dots"].text);
+            panel.Buttons["dots"].onClick.Invoke();
+            Assert.IsFalse(dots.Visible, "the button still toggles them");
+            panel.Buttons["dots"].onClick.Invoke();
+            Assert.IsTrue(dots.Visible);
+
+            panel.Buttons["primary"].onClick.Invoke();
+            Feed(0.0, 0.5);
+            Assert.AreEqual(OperatorStep.Setup, op.Step);
+            Assert.IsTrue(dots.Visible, "kept through the initial board and experiment ID");
+
+            op.AddSubject("山田");
+            panel.Buttons["primary"].onClick.Invoke();
+            Assert.AreEqual(OperatorStep.Running, op.Step);
+            Assert.IsFalse(dots.Visible, "hidden when the trial starts");
+
+            op.ResetTrial();
+            op.StartCalibration();
+            Assert.IsTrue(dots.Visible);
+            op.ResetTrial();
+            Assert.IsFalse(dots.Visible, "hidden when back to idle");
+            rec.Dispose();
+            op.Dispose();
+        }
+
+        [Test]
         public void Panel_EditInfoAndHistoryDialogs()
         {
             var (op, rec, now) = CreateSession();
